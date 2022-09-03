@@ -361,21 +361,23 @@ impl MetaPool {
     #[payable]
     pub fn deposit_and_stake(&mut self) {
         self.internal_deposit();
-        self.internal_stake(env::attached_deposit());
+        self.internal_stake_from_account(env::predecessor_account_id(), env::attached_deposit());
+        //----------
+        //check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
+        self.nslp_try_internal_clearing();
     }
 
     /// Stakes all "unstaked" balance from the inner account of the predecessor.
-    /// here we keep the staking-pool logic because we're implementing the staking-pool trait
+    /// we keep this to implement the staking-pool trait, but we don't support re-staking unstaked amounts
     pub fn stake_all(&mut self) {
-        let account_id = env::predecessor_account_id();
-        let account = self.internal_get_account(&account_id);
-        self.internal_stake(account.unstaked);
+        panic!("please use deposit_and_stake");
     }
 
     /// Stakes the given amount from the inner account of the predecessor.
-    /// The inner account should have enough unstaked balance.
+    /// we keep this to implementing the staking-pool trait, but we don't support re-staking unstaked amounts
+    #[allow(unused_variables)]
     pub fn stake(&mut self, amount: U128String) {
-        self.internal_stake(amount.0);
+        panic!("please use deposit_and_stake");
     }
 
     /// Unstakes all staked balance from the inner account of the predecessor.
@@ -830,6 +832,24 @@ impl MetaPool {
             near: transfer_amount.into(),
             st_near: st_near_to_remove_from_pool.into(),
         };
+    }
+
+    //----------------------------------
+    // Use part of the NSLP to stake. This is the inverse operation of nslp_try_internal_clearing
+    // can be used by the operator to increase ecpoch_stake_orders 
+    // to later direct stake in validators that are about to lose the seat
+    // ---------------------------------
+    #[payable]
+    pub fn stake_from_nslp(&mut self, near_amount: U128String) {
+        assert_one_yocto();
+        self.assert_operator_or_owner();
+        // check the amount
+        let nslp_account = self.internal_get_nslp_account();
+        let amount = near_amount.0;
+        assert!(nslp_account.available > amount,"too much");
+        assert!(nslp_account.available - amount > self.nslp_liquidity_target, "stake will leave NSLP below target");
+        // stake from nslp
+        self.internal_stake_from_account(NSLP_INTERNAL_ACCOUNT.to_string(), amount)
     }
 
     //------------------

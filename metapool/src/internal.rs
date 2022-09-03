@@ -106,21 +106,18 @@ impl MetaPool {
     }
 
     //------------------------------
-    /// takes from account.available and mints stNEAR
+    /// takes from account.available and mints stNEAR for account_id
     /// actual stake in a staking-pool is made by the meta-pool-heartbeat before the end of the epoch
-    pub(crate) fn internal_stake(&mut self, user_amount: Balance) {
+    pub(crate) fn internal_stake_from_account(&mut self, account_id: AccountId, near_amount: Balance) {
         self.assert_not_busy();
 
-        self.assert_min_deposit_amount(user_amount);
+        self.assert_min_deposit_amount(near_amount);
 
-        let account_id = env::predecessor_account_id();
         let mut acc = self.internal_get_account(&account_id);
 
         //take from the account "available" balance
-        let amount = acc.take_from_available(user_amount, self);
+        let amount = acc.take_from_available(near_amount, self);
 
-        //use this operation to realize meta pending rewards
-        acc.stake_realize_meta(self);
         // Calculate the number of st_near (stake shares) that the account will receive for staking the given amount.
         let num_shares = self.stake_shares_from_amount(amount);
         assert!(num_shares > 0);
@@ -142,9 +139,6 @@ impl MetaPool {
             amount
         );
 
-        //----------
-        //check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
-        self.nslp_try_internal_clearing();
     }
 
     //------------------------------
@@ -325,7 +319,7 @@ impl MetaPool {
 
     //----------------------------------
     pub(crate) fn internal_undo_end_of_epoch(&mut self) {
-        if self.total_for_staking < self.total_actually_staked {
+        if self.total_for_staking <= self.total_actually_staked {
             self.epoch_stake_orders = 0;
             self.epoch_unstake_orders = self.total_actually_staked - self.total_for_staking;
         } else if self.total_for_staking > self.total_actually_staked {

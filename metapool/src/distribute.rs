@@ -673,11 +673,12 @@ impl MetaPool {
         }
 
         log!(
-            "sp:{} old_balance:{} new_balance:{} rewards:{}",
+            "sp:{} old_balance:{} new_balance:{} rewards:{} unstaked:{}",
             sp.account_id,
             sp.total_balance(),
             new_total_balance,
-            rewards
+            rewards,
+            sp.unstaked
         );
 
         //updated accumulated_staked_rewards value for the contract
