@@ -43,7 +43,10 @@ impl MetaPool {
         //-------------------------------------
         // we could have operator-manual-unstakes, so cap to unstake is self.epoch_stake_orders
         // also there could be minor yocto corrections after sync_unstake, altering total_actually_staked, consider that
-        // self.epoch_stake_orders are NEAR that were sent to this contract by users and are available in reserve for staking
+        // epoch_stake_orders are NEAR that were deposited by users, stNEAR minted, and are available in the contract for staking or to reserve (see epoch_unstake_orders)
+        // epoch_unstake_orders are stNEAR that was burned, users started delayed-unstake, and so NEAR must be unstaked from the pools...
+        // ... some NEAR from epoch_stake_orders might remain as reserve, to avoid senseless stake + unstake
+        // but in any case, does not make sense to stake more than delta: total_for_staking - total_actually_staked
         let total_amount_to_stake = std::cmp::min(
             self.epoch_stake_orders,
             self.total_for_staking - self.total_actually_staked,
@@ -174,8 +177,8 @@ impl MetaPool {
                                         //not deposited first, so staked funds came from unstaked funds already in the staking-pool
                 sp.unstaked -= amount; //we've now less unstaked in this sp
                 self.total_unstaked_and_waiting -= amount; // contract total of all unstaked & waiting
-                                                           //since we kept the NEAR in the contract and took from unstake-claims
-                                                           //reserve contract NEAR for the unstake-claims
+                                                           // since we kept the NEAR in the contract and took from unstake-claims
+                                                           // reserve contract NEAR for the unstake-claims
                 self.reserve_for_unstake_claims += amount;
             }
             //move into staked
@@ -302,8 +305,8 @@ impl MetaPool {
         // resulting amount can not be lower than total_unstake_claims
         assert!(amount.0 <= self.reserve_for_unstake_claims );
         self.reserve_for_unstake_claims -= amount.0;
-        // reserve_for_claims = NEAR in the contract, withdrawn in prev epochs
-        // unstaked_and_waiting = unstaked in prev epochs, will become reserve
+        // reserve_for_unstake_claims = NEAR in the contract, withdrawn in prev epochs
+        // unstaked_and_waiting = unstaked in prev epochs, waiting, will become reserve
         // epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
         // reserve + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
         assert!(self.reserve_for_unstake_claims+self.total_unstaked_and_waiting+self.epoch_unstake_orders >= self.total_unstake_claims, 
@@ -831,11 +834,10 @@ impl MetaPool {
         if withdraw_succeeded {
             result = "succeeded";
             withdrawn_amount = amount;
-            sp.unstaked = sp.unstaked.saturating_sub(amount); //is no longer in the pool as "unstaked"
-            self.total_unstaked_and_waiting =
-                self.total_unstaked_and_waiting.saturating_sub(amount); //contract total
-                                                                        // the amount is now in the contract balance
-            self.contract_account_balance += amount;
+            sp.unstaked -= amount; // is no longer in the pool as "unstaked"
+            self.total_unstaked_and_waiting = // contract total_unstaked_and_waiting decremented...
+                self.total_unstaked_and_waiting.saturating_sub(amount); // ... because is no longer waiting
+            self.contract_account_balance += amount; // the amount is now in the contract balance
             // the amount retrieved should be "reserved_for_unstaked_claims" until the user calls withdraw_unstaked
             self.reserve_for_unstake_claims += amount;
             //log event

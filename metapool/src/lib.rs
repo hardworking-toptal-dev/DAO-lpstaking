@@ -114,10 +114,14 @@ pub struct MetaPool {
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
     /// This amount increments *after* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other.
-    /// This amount also increments at retrieve_from_staking_pool
+    /// This amount also increments at retrieve_from_staking_pool, all retrieved is considered reserved for unstkae claims
     /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
-    /// This amount decrements at unstake-withdraw, sending the NEAR to the user
-    /// Note: There's a extra functionality (quick-exit) that can speed-up unstaking claims if there's funds in this amount.
+    /// This amount decrements at user's delayed-unstake-withdraw, when sending the NEAR to the user
+    /// Related variables and Invariant:
+    /// reserve_for_unstake_claims = NEAR in the contract, withdrawn in prev epochs
+    /// unstaked_and_waiting = unstaked in prev epochs, waiting, will become reserve
+    /// epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
+    /// Invariant: reserve_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
     pub reserve_for_unstake_claims: u128,
 
     /// This value is equivalent to sum(accounts.available)
@@ -128,9 +132,9 @@ pub struct MetaPool {
     pub total_available: u128,
 
     //-- ORDERS
-    /// The total amount of "stake" orders in the current epoch
+    /// The total amount of "stake" orders in the current epoch, stNEAR has been minted, NEAR is in the contract, stake might be done before EOE
     pub epoch_stake_orders: u128,
-    /// The total amount of "delayed-unstake" orders in the current epoch
+    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake migth be done before EOE
     pub epoch_unstake_orders: u128,
     // this two amounts can cancel each other at end_of_epoch_clearing
     /// The epoch when the last end_of_epoch_clearing was performed. To avoid calling it twice in the same epoch.
@@ -161,7 +165,11 @@ pub struct MetaPool {
 
     /// sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
     /// when the funds are withdrawn the amount is decremented.
-    /// Control: total_unstaked_claims == reserve_for_unstaked_claims + total_unstaked_and_waiting
+    /// Related variables and Invariant:
+    /// reserve_for_unstake_claims = NEAR in the contract, withdrawn in prev epochs
+    /// unstaked_and_waiting = unstaked in prev epochs, waiting, will become reserve
+    /// epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
+    /// Invariant: reserve_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
     pub total_unstake_claims: u128,
 
     /// the staking pools will add rewards to the staked amount on each epoch
