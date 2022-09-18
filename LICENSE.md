@@ -1,4 +1,4 @@
-Copyright Narwallets.com 2020. All rights reserved.
+Copyright Metapool.app 2020. All rights reserved.
  
 You acknowledge and agree that Narwallets.com own all legal right, title and interest in and to the work, software, application, source code, documentation and any other documents in this repository (collectively, the “Program”), including any intellectual property rights which subsist in the Program (whether those rights happen to be registered or not, and wherever in the world those rights may exist), whether in source code or any other form.
  
