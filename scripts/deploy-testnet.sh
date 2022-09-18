@@ -24,6 +24,7 @@ export NEAR_ENV=$NETWORK
 #near call $CONTRACT_ACC set_busy "{\"value\":false}" --accountId $CONTRACT_ACC --depositYocto 1
 
 # ## redeploy code only
+echo $NETWORK, $CONTRACT_ACC
 near deploy $CONTRACT_ACC ./res/metapool.wasm  --accountId $MASTER_ACC --networkId $NETWORK
 # ## MIGRATE
 #near call $CONTRACT_ACC migrate "{}" --accountId $CONTRACT_ACC

@@ -285,6 +285,30 @@ impl MetaPool {
         self.internal_undo_end_of_epoch();
     }
    
+    // used by operator to reserve extra amounts for unstake-claims
+    #[payable]
+    pub fn add_to_reserve_for_unstake_claims(&mut self, amount:U128String) {
+        self.assert_operator_or_owner();
+        assert_one_yocto();
+        let positive_delta_stake = self.epoch_stake_orders.saturating_sub(self.epoch_unstake_orders);
+        // amount must exists as extra nears in the contract balance
+        assert!(amount.0 <= self.contract_account_balance - positive_delta_stake - self.reserve_for_unstake_claims );
+        self.reserve_for_unstake_claims += amount.0;
+    }
+    #[payable]
+    pub fn remove_from_reserve_for_unstake_claims(&mut self, amount:U128String) {
+        self.assert_operator_or_owner();
+        assert_one_yocto();
+        // resulting amount can not be lower than total_unstake_claims
+        assert!(amount.0 <= self.reserve_for_unstake_claims );
+        self.reserve_for_unstake_claims -= amount.0;
+        // reserve_for_claims = NEAR in the contract, withdrawn in prev epochs
+        // unstaked_and_waiting = unstaked in prev epochs, will become reserve
+        // epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
+        // reserve + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
+        assert!(self.reserve_for_unstake_claims+self.total_unstaked_and_waiting+self.epoch_unstake_orders >= self.total_unstake_claims, 
+            "reserve + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims");
+    }
 
     // Operator method, but open to anyone
     /// distribute_unstaking(). Do unstaking

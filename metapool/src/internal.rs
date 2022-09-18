@@ -115,7 +115,8 @@ impl MetaPool {
 
         let mut acc = self.internal_get_account(&account_id);
 
-        //take from the account "available" balance
+        // take from the account "available" balance
+        // also subs self.total_available
         let amount = acc.take_from_available(near_amount, self);
 
         // Calculate the number of st_near (stake shares) that the account will receive for staking the given amount.
