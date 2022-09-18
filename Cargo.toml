@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "metapool",
-    "meta-token",
     "test-get-epoch-contract",
 ]
 

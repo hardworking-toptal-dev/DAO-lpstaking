@@ -26,26 +26,22 @@ impl MetaPool {
             return false;
         }
         // here self.total_for_staking > self.total_actually_staked
+        // do clearing
+        self.end_of_epoch_clearing();
+        // here, if we have epoch_stake_orders, then we need to stake
         if self.epoch_stake_orders == 0  { 
             // that delta is from some manual-unstake
             log!("self.epoch_stake_orders == 0");
             return false;
         }
 
-        //----------
-        //check if the liquidity pool needs liquidity, and then use this opportunity to sell stnear in the LP by internal-clearing
-        if self.nslp_try_internal_clearing() {
-            return true; //call again
-        }
-
         //-------------------------------------
         //compute amount to stake
         //-------------------------------------
-        // we could have operator-manual-unstakes, so cap to unstake is self.epoch_stake_orders
-        // also there could be minor yocto corrections after sync_unstake, altering total_actually_staked, consider that
+        // Note: there could be minor yocto corrections after sync_unstake, altering total_actually_staked, consider that
         // epoch_stake_orders are NEAR that were deposited by users, stNEAR minted, and are available in the contract for staking or to reserve (see epoch_unstake_orders)
         // epoch_unstake_orders are stNEAR that was burned, users started delayed-unstake, and so NEAR must be unstaked from the pools...
-        // ... some NEAR from epoch_stake_orders might remain as reserve, to avoid senseless stake + unstake
+        // ... or some NEAR from epoch_stake_orders might remain as reserve, to avoid senseless stake + unstake
         // but in any case, does not make sense to stake more than delta: total_for_staking - total_actually_staked
         let total_amount_to_stake = std::cmp::min(
             self.epoch_stake_orders,
@@ -56,6 +52,7 @@ impl MetaPool {
             return false;
         }
         // find pool
+        // the resulting "amount_to_stake" could be less than total_amount_to_stake, if the found pool dos neet that much
         let (sp_inx, amount_to_stake) =
             self.get_staking_pool_requiring_stake(total_amount_to_stake);
         log!(
@@ -64,15 +61,17 @@ impl MetaPool {
             sp_inx,
             amount_to_stake
         );
-        // schedule stake or re-stake promises
-        self.direct_stake(sp_inx, amount_to_stake);
+        // schedule promise to stake
+        self.launch_direct_stake(sp_inx, amount_to_stake);
         return true; //did some staking (promises scheduled), call again
     }
 
-    // internal direct stake on a pool
     // prev fn continues here
-    // schedules promises to stake or re-stake
-    fn direct_stake(&mut self, sp_inx:usize, mut amount_to_stake:u128) {
+    /// internal launch direct stake on a pool
+    /// **schedules promises** to stake 
+    /// Note: if the sp has some sizable unstake pending, the fn will re-stake the unstaked-and-waiting-amount
+    /// that amount can be lower than the amount requested to stake
+    fn launch_direct_stake(&mut self, sp_inx:usize, mut amount_to_stake:u128) {
 
         if amount_to_stake > 0 {
             //most unbalanced pool found & available
@@ -168,18 +167,18 @@ impl MetaPool {
             result = "succeeded";
             let event: &str;
             if included_deposit {
-                //we send NEAR to the staking-pool
+                // we sent NEAR from the contract into the staking-pool
                 event = "dist.stak"; //stake in the pools (including transfer)
-                                     //we took from contract balance (transfer)
-                self.contract_account_balance -= amount;
+                self.contract_account_balance -= amount; // we took from contract balance (transfer)
             } else {
-                event = "dist.stak.nt"; //stake in the pools, no-transfer
-                                        //not deposited first, so staked funds came from unstaked funds already in the staking-pool
+                // stake the unstaked in the pool, no-transfer
+                event = "dist.stak.nt"; //not deposited first, so staked funds came from unstaked funds already in the staking-pool
                 sp.unstaked -= amount; //we've now less unstaked in this sp
-                self.total_unstaked_and_waiting -= amount; // contract total of all unstaked & waiting
-                                                           // since we kept the NEAR in the contract and took from unstake-claims
-                                                           // reserve contract NEAR for the unstake-claims
-                self.reserve_for_unstake_claims += amount;
+                self.total_unstaked_and_waiting -= amount; // contract total of all unstaked & waiting, now there's less there.
+                                                           // We kept the NEAR in the contract and took from unstaked_and_waiting
+                                                           // ... unstaked_and_waiting was in their way to be converted in retrieved_for_unstake_claims
+                self.retrieved_for_unstake_claims += amount; // so this is a special case: the NEAR to stake was taken from total_unstaked_and_waiting,
+                                                             // so we compensate and take the NEAR in the contract and consider it reserved for_unstake_claims
             }
             //move into staked
             sp.staked += amount;
@@ -203,8 +202,8 @@ impl MetaPool {
 
     // execute stake on sp[inx] by amount
     // used by operator if a validator requires emergency stake to keep a seat
-    // Note: this fn *schedules some amount to be staked* (can be lower than the requested one, call again to stake more)
-    // and also consider that the scheduled promise-to-stake/restake can fail
+    // Note: this fn stakes from current epochs_stake_orders,
+    // consider that the scheduled promise-to-stake/restake can fail
     pub fn manual_stake(&mut self, inx: u16, amount: U128String) {
         self.assert_operator_or_owner();
 
@@ -217,100 +216,44 @@ impl MetaPool {
         assert!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[sp_inx];
         assert!(!sp.busy_lock, "sp busy");
-        // perform direct stake
-        self.direct_stake(sp_inx, amount.0);
+        // schedule promise to direct stake
+        self.launch_direct_stake(sp_inx, amount.0);
         // Note: if the pool has some sizable unstake pending, the fn will re-stake the unstaked-and-waiting-amount
         // that amount can be lower than the amount requested to stake
     }
 
-    // execute unstake on sp[inx] by amount
-    // used by operator if a validator goes offline, to not wait and unstake immediately
-    // PART 1 - it requires a call to complete_manual_unstake 4 epochs later, once the funds have been retrieved
-    pub fn start_manual_unstake(&mut self, inx: u16, amount: U128String) {
+    // start a rebalance, execute unstake on sp[inx] by amount
+    // used by operator when rebalancing the pool or if a validator goes offline (force rebalance), to not wait and unstake immediately
+    // The amount to unstake is added to epoch_unstake_orders, AS IF this were a delayed-unstake initiated by some user
+    // but the total_unstake_claims is NOT incremented, so when these funds are finally withdrawn, 4 epochs from now,
+    // the extra NEAR received (any amount reserved exceeding total_unstake_claims) should be put to stake, thus completing the rebalance
+    // Note: It could happen that some users perform delayed-unstake during those epochs, that amount will be preserved in the contract, ...
+    // ... because total_unstake_claims has priority over rebalance.
+    pub fn start_rebalance_unstake(&mut self, inx: u16, amount: U128String) {
         self.assert_operator_or_owner();
         let sp_inx = inx as usize;
         assert!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &self.staking_pools[sp_inx];
         assert!(!sp.busy_lock, "sp busy");
         assert!(
-            sp.weight_basis_points == 0,
-            "sp.weight_basis_points<>0, ={}",
-            sp.weight_basis_points,
-        );
-        assert!(
-            sp.staked == amount.0,
-            "invalid stake amount. sent:{} but sp.staked={}",
+            sp.staked >= amount.0,
+            "not enough stake amount. asked:{} but sp.staked={}",
             amount.0,
             sp.staked,
         );
-        // can not unstake while unstake pending because it will extend the waiting period
+        // can not unstake while unstake pending (if it was done on previous epochs) 
+        // because it will extend the waiting period
         assert!(
-            sp.unstaked == 0,
-            "can not manually unstake while unstake pending. sp.unstake={}",
-            sp.unstaked,
+            sp.unstaked == 0 || sp.unstk_req_epoch_height == env::epoch_height(),
+            "can not manually unstake while unstake pending. sp.unstake={}, sp.unstk_req_epoch_height={}, env::epoch_height()={}",
+            sp.unstaked, sp.unstk_req_epoch_height, env::epoch_height()
         );
-        // epoch_unstake_orders should be >= to manual_unstake_amount
-        // for direct_unstake to work
-        self.epoch_unstake_orders += amount.0;
-        self.direct_unstake(sp_inx, amount.0);
-    }
-    // this should be called by the operator
-    // 4 EPOCHS AFTER MANUAL_UNSTAKE,
-    // AFTER all the funds have been recovered from the off-line validator
-    pub fn complete_manual_unstake(&mut self, inx: u16, amount: U128String) {
-        self.assert_operator_or_owner();
-        let sp_inx = inx as usize;
-        assert!(sp_inx < self.staking_pools.len(), "invalid index");
-        let sp = &self.staking_pools[sp_inx];
-        assert!(
-            sp.weight_basis_points == 0,
-            "sp.weight_basis_points<>0, ={}",
-            sp.weight_basis_points,
-        );
-        assert!(
-            sp.staked == 0 && sp.unstaked == 0,
-            "staked & unstaked must be 0. inx:{} staked:{} unstaked:{}",
-            inx,
-            sp.staked,
-            sp.unstaked
-        );
-        // retrieve-funds call incremented "reserved_for_unstake_claims" (default behavior)
-        // but manually unstaked funds are "for re-staking", so we decrement reserve_for_unstake_claims
-        assert!(self.reserve_for_unstake_claims >= amount.0);
-        self.reserve_for_unstake_claims -= amount.0;
-        // and also we increment epoch_stake_orders so the funds are re-staked in the next bot run
-        self.epoch_stake_orders += amount.0;
-    }
-
-    // used by operator to reset epoch_stake/unstake_orders and restart staking/unstaking
-    pub fn undo_end_of_epoch(&mut self) {
-        self.assert_operator_or_owner();
-        self.internal_undo_end_of_epoch();
-    }
-   
-    // used by operator to reserve extra amounts for unstake-claims
-    #[payable]
-    pub fn add_to_reserve_for_unstake_claims(&mut self, amount:U128String) {
-        self.assert_operator_or_owner();
-        assert_one_yocto();
-        let positive_delta_stake = self.epoch_stake_orders.saturating_sub(self.epoch_unstake_orders);
-        // amount must exists as extra nears in the contract balance
-        assert!(amount.0 <= self.contract_account_balance - positive_delta_stake - self.reserve_for_unstake_claims );
-        self.reserve_for_unstake_claims += amount.0;
-    }
-    #[payable]
-    pub fn remove_from_reserve_for_unstake_claims(&mut self, amount:U128String) {
-        self.assert_operator_or_owner();
-        assert_one_yocto();
-        // resulting amount can not be lower than total_unstake_claims
-        assert!(amount.0 <= self.reserve_for_unstake_claims );
-        self.reserve_for_unstake_claims -= amount.0;
-        // reserve_for_unstake_claims = NEAR in the contract, withdrawn in prev epochs
-        // unstaked_and_waiting = unstaked in prev epochs, waiting, will become reserve
-        // epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
-        // reserve + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
-        assert!(self.reserve_for_unstake_claims+self.total_unstaked_and_waiting+self.epoch_unstake_orders >= self.total_unstake_claims, 
-            "reserve + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims");
+        // Next call affects:
+        // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting, 
+        // but it DOES NOT not affect reserve_for_unstake_claims and also DOES NOT change total_for_stake
+        // this means that eventually we will retrieve from the pools, more than required for reserve_for_unstake_claims
+        // at that point, the extra amount is set for restake (see fn retrieve_funds_from_a_pool), completing the rebalance
+        self.perform_unstake(sp_inx, amount.0, true); // unstake for rebalance
     }
 
     // Operator method, but open to anyone
@@ -320,27 +263,12 @@ impl MetaPool {
         //Note: In order to make this contract independent from the operator
         //this fn is open to be called by anyone
 
-        //let epoch_height = env::epoch_height();
-        // if self.last_epoch_height == epoch_height {
-        //     return false;
-        // }
-        // self.last_epoch_height = epoch_height;
-
         self.assert_not_busy();
-
-        //--------------------------
-        //compute amount to unstake
-        //--------------------------
-        if self.total_actually_staked <= self.total_for_staking {
-            //no unstaking needed
-            return false;
-        }
-        // there could be minor yocto corrections after sync_unstake, altering total_actually_staked, consider that
-        let total_to_unstake = std::cmp::min(
-            self.epoch_unstake_orders,
-            self.total_actually_staked - self.total_for_staking,
-        );
-        //check if the amount justifies tx-fee / can be unstaked really
+        // clearing first
+        self.end_of_epoch_clearing();
+        // after clearing, epoch_unstake_orders is the amount to unstake
+        let total_to_unstake = self.epoch_unstake_orders;
+        // check if the amount justifies tx-fee / can be unstaked really
         // TODO: It's better to move `10 * TGAS as u128` since it's incorrect to compare GAS to NEAR.
         //    GAS has a gas_price, and if gas price goes higher, then the comparison might be out of
         //    date. Since the operator is paying for all gas, it's probably fine to execute anyway.
@@ -348,30 +276,29 @@ impl MetaPool {
             return false;
         }
 
+        // resulting "amount_to_unstake" can be lower than total_to_unstake, according to conditions in get_staking_pool_requiring_unstake 
         let (sp_inx, amount_to_unstake) = self.get_staking_pool_requiring_unstake(total_to_unstake);
         if amount_to_unstake > 10 * TGAS as u128 {
-            //only if the amount justifies tx-fee
-            //most unbalanced pool found & available
-            //launch async to unstake
-            self.direct_unstake(sp_inx, amount_to_unstake);
-            return true; //needs to be called again
+            // only if the amount justifies tx-fee
+            // most unbalanced pool found & available
+            // continue with generateing the promise for async cross-contract call to unstake
+            self.perform_unstake(sp_inx, amount_to_unstake, false);
+            return amount_to_unstake < total_to_unstake; // if needs to be called again
         } else {
             return false;
         }
     }
 
+    // two prev fns continue here
     // execute unstake on sp[inx] by amount
-    fn direct_unstake(&mut self, sp_inx: usize, amount_to_unstake: u128) {
+    // if is_rebalance then it does no consider this unstake originated in epoch_unstake_orders
+    fn perform_unstake(&mut self, sp_inx: usize, amount_to_unstake: u128, is_rebalance: bool) {
         if amount_to_unstake == 0 {
             return;
         }
         self.assert_not_busy();
 
         assert!(self.total_actually_staked >= amount_to_unstake, "IUN");
-        assert!(
-            self.epoch_unstake_orders >= amount_to_unstake,
-            "epoch_unstake_orders<amount_to_unstake"
-        );
         assert!(sp_inx < self.staking_pools.len(), "invalid index");
         let sp = &mut self.staking_pools[sp_inx];
         assert!(
@@ -384,9 +311,12 @@ impl MetaPool {
         self.contract_busy = true;
         sp.busy_lock = true;
 
-        //preventively consider the amount un-staked (undoes if promise fails)
+        // preventively consider the amount un-staked (undoes if promise fails)
         self.total_actually_staked -= amount_to_unstake;
-        self.epoch_unstake_orders -= amount_to_unstake;
+        if !is_rebalance { 
+            // if !is_rebalance then consider it originated in epoch_unstake_orders
+            self.epoch_unstake_orders -= amount_to_unstake; // preventively consider the unstake_order fulfilled
+        }
 
         //launch async to un-stake from the pool
         ext_staking_pool::unstake(
@@ -398,6 +328,7 @@ impl MetaPool {
         .then(ext_self_owner::on_staking_pool_unstake(
             sp_inx,
             amount_to_unstake.into(),
+            is_rebalance,
             //extra async call args
             &env::current_account_id(),
             NO_DEPOSIT,
@@ -407,7 +338,7 @@ impl MetaPool {
     /// The prev fn continues here
     /// Called after the given amount was unstaked at the staking pool contract.
     /// This method needs to update staking pool status.
-    pub fn on_staking_pool_unstake(&mut self, sp_inx: usize, amount: U128String) {
+    pub fn on_staking_pool_unstake(&mut self, sp_inx: usize, amount: U128String, is_rebalance: bool) {
         assert_callback_calling();
 
         let sp = &mut self.staking_pools[sp_inx];
@@ -420,16 +351,20 @@ impl MetaPool {
             sp.staked -= amount.0;
             sp.unstaked += amount.0;
             sp.unstk_req_epoch_height = env::epoch_height();
-            self.total_unstaked_and_waiting += amount.0; //contract total
+            self.total_unstaked_and_waiting += amount.0; // contract total unstaked_and_waiting
+            let event_prefix = if is_rebalance {"rebal"} else {"dist"};
             event!(
-                r#"{{"event":"dist.unstk","sp":"{}","amount":"{}"}}"#,
+                r#"{{"event":"{}.unstk","sp":"{}","amount":"{}"}}"#,
+                event_prefix,
                 sp.account_id,
                 amount.0
             );
         } else {
             result = "has failed";
             self.total_actually_staked += amount.0; //undo preventive action considering the amount unstaked
-            self.epoch_unstake_orders += amount.0; //undo preventive action considering the amount unstaked
+            if !is_rebalance {
+                self.epoch_unstake_orders += amount.0; //undo preventive action considering the order fulfiled
+            }
         }
 
         log!("Unstaking of {} at @{} {}", amount.0, sp.account_id, result);
@@ -575,7 +510,7 @@ impl MetaPool {
     //-- COMPUTE AND DISTRIBUTE STAKING REWARDS for a specific staking-pool --
     //------------------------------------------------------------------------
     // Operator method, but open to anyone. Should be called once per epoch per sp, after sp rewards distribution (ping)
-    /// Retrieves total balance from the staking pool and remembers it internally.
+    /// Ask total balance from the staking pool and remembers it internally.
     /// Also computes and distributes rewards for operator and stakers
     /// this fn queries the staking pool (makes a cross-contract call)
     pub fn distribute_rewards(&mut self, sp_inx: u16) {
@@ -777,7 +712,7 @@ impl MetaPool {
     //----------------------------------------------------------------------
     /// launches a withdrawal call
     /// returns the amount withdrawn
-    /// call get_staking_pool_requiring_retrieve first
+    /// you should call get_staking_pool_requiring_retrieve first, to obtain a valid inx
     ///
     pub fn retrieve_funds_from_a_pool(&mut self, inx: u16) -> Promise {
         //Note: In order to make fund-recovering independent from the operator
@@ -825,30 +760,48 @@ impl MetaPool {
         assert_callback_calling();
 
         let sp = &mut self.staking_pools[inx as usize];
-        let amount = sp.unstaked; //we retrieved all
+        let amount = sp.unstaked; // we retrieved all
 
-        let withdraw_succeeded = is_promise_success();
+        let retrieve_succeeded = is_promise_success();
 
         let result: &str;
-        let withdrawn_amount: u128;
-        if withdraw_succeeded {
+        let retrieved_amount: u128;
+        if retrieve_succeeded {
             result = "succeeded";
-            withdrawn_amount = amount;
+            retrieved_amount = amount;
             sp.unstaked -= amount; // is no longer in the pool as "unstaked"
             self.total_unstaked_and_waiting = // contract total_unstaked_and_waiting decremented...
                 self.total_unstaked_and_waiting.saturating_sub(amount); // ... because is no longer waiting
             self.contract_account_balance += amount; // the amount is now in the contract balance
-            // the amount retrieved should be "reserved_for_unstaked_claims" until the user calls withdraw_unstaked
-            self.reserve_for_unstake_claims += amount;
+            // the amount retrieved should be considered "reserved_for_unstaked_claims" until the user calls withdraw_unstaked
+            self.retrieved_for_unstake_claims += amount;
             //log event
             event!(
                 r#"{{"event":"retrieve","sp":"{}","amount":"{}"}}"#,
                 sp.account_id,
                 amount
             );
+            // REBALANCE:
+            // we retrieved funds and incremented "reserved_for_unstake_claims" 
+            // BUT this retrieval could originate from a start_rebalance_unstake call,
+            // so we check if we have more NEAR in the contract than the amount we need for total_unstake_claims, 
+            // and if we do, then put the extra NEAR to re-stake, thus completing the rebalance
+            // Note: we're ignoring unstaked_and_waiting and current epoch_unstake_orders, because reserve_for_unstake_claims has priority
+            if self.retrieved_for_unstake_claims > self.total_unstake_claims { // confirmed extra to rebalance
+                let extra = self.retrieved_for_unstake_claims - self.total_unstake_claims;
+                self.retrieved_for_unstake_claims -= extra; // remove extra from reserve
+                self.epoch_stake_orders += extra; // put it in epoch_stake_orders, so the funds are re-staked before EOE
+                //log event
+                event!(
+                    r#"{{"event":"rebalance","retrieved_for_unstake_claims":"{}","total_unstake_claims":"{}"}}"#,
+                    self.retrieved_for_unstake_claims,
+                    self.total_unstake_claims
+                );
+            }
+
         } else {
             result = "has failed";
-            withdrawn_amount = 0;
+            retrieved_amount = 0;
         }
         log!(
             "The withdrawal of {} from @{} {}",
@@ -862,7 +815,7 @@ impl MetaPool {
         sp.busy_lock = false;
         self.contract_busy = false;
 
-        return withdrawn_amount.into();
+        return retrieved_amount.into();
     }
 
     // Operator method, but open to anyone
@@ -882,28 +835,31 @@ impl MetaPool {
         self.assert_not_busy();
         // NOTE: Worth calling this method before any actual staking/unstaking.
 
+        // if any one of the two is zero, we've a pure stake or pure unstake epoch, no clearing
+        // just go and stake or unstake
         if self.epoch_stake_orders == 0 || self.epoch_unstake_orders == 0 {
             return;
         }
 
         // NOTE: `to_keep` can also be computed as `min(self.epoch_stake_orders, self.epoch_unstake_orders)`
-        let delta: u128;
-        let to_keep: u128;
-        if self.epoch_stake_orders >= self.epoch_unstake_orders {
-            delta = self.epoch_stake_orders - self.epoch_unstake_orders;
-            to_keep = self.epoch_stake_orders - delta;
-        } else {
-            delta = self.epoch_unstake_orders - self.epoch_stake_orders;
-            to_keep = self.epoch_unstake_orders - delta;
-        }
+        let to_keep =
+            if self.epoch_stake_orders >= self.epoch_unstake_orders {
+                // if more stake-orders than unstake-orders, we keep the NEAR corresponding to epoch_unstake_orders (delayed unstakes)
+                // we keep it from now, so the users can withdraw in 4 epochs (clearing: no need to stake and then unstake)
+                self.epoch_unstake_orders
+            } else {
+                // if more delayed-unstakes than stakes, we keep at least the stake-orders, the NEAR we have (clearing: no need to stake and then unstake)
+                // and the rest (delta) will be unstakes before EOE
+                self.epoch_stake_orders
+            };
 
-        //we will keep this NEAR (no need to send to the pools). We keep it reserved for unstake_claims, 4 epochs from now
-        self.reserve_for_unstake_claims += to_keep;
-        //clear opposing orders
+        // we will keep this NEAR (no need to go to the pools). We consider it reserved for unstake_claims, 4 epochs from now
+        self.retrieved_for_unstake_claims += to_keep;
+        // clear opposing orders
         self.epoch_stake_orders -= to_keep;
         self.epoch_unstake_orders -= to_keep;
 
-        // Note: epoch_last_clearing is not being used right now
+        // Note: epoch_last_clearing is just informative, not being used right now
         self.epoch_last_clearing = env::epoch_height();
         event!(r#"{{"event":"clr.ord","keep":"{}"}}"#, to_keep);
     }

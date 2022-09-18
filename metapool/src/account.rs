@@ -181,7 +181,7 @@ impl Account {
     }
 
     /// user method
-    /// completes unstake action by moving from acc.unstaked & main.reserve_for_unstaked_claims -> acc.available & main.total_available
+    /// completes unstake action by moving from acc.unstaked & main.retrieved_for_unstaked_claims -> acc.available & main.total_available
     pub fn in_memory_try_finish_unstaking(
         &mut self,
         account_id: &str,
@@ -204,12 +204,12 @@ impl Account {
         self.available += amount;
         //check the heart beat has really moved the funds
         assert!(
-            main.reserve_for_unstake_claims >= amount,
+            main.retrieved_for_unstake_claims >= amount,
             "Funds are not yet available due to unstaking delay. Epoch:{}",
             env::epoch_height()
         );
         // in the contract, move from reserve_for_unstaked_claims to total_available
-        main.reserve_for_unstake_claims -= amount;
+        main.retrieved_for_unstake_claims -= amount;
         assert!(main.total_unstake_claims >= amount, "ITUC");
         main.total_unstake_claims -= amount;
         main.total_available += amount;

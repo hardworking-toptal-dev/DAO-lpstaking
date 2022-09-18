@@ -170,75 +170,42 @@ pub struct GetAccountInfoResult {
 /// Represents contact state as as JSON compatible struct
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde")]
+/// check struct MetaPool for explanations on each field
 pub struct GetContractStateResult {
     //current env::epoch_height() .- to check gainst unstake-delay end epoch
     pub env_epoch_height: U64,
 
-    /// What should be the contract_account_balance according to our internal accounting (if there's extra, it is 30% tx-fees)
-    /// This amount increments with attachedNEAR calls (inflow) and decrements with deposit_and_stake calls (outflow)
-    /// increments with retrieve_from_staking_pool (inflow) and decrements with user withdrawals from the contract (outflow)
-    /// It should match env::balance()
     pub contract_account_balance: U128String,
 
-    /// This amount increments with deposits and decrements when actual stake is performed
-    /// increments with retrieve_funds and decrements with user withdrawals from the contract
-    /// with the new simplified user flow, the only accounts with available should be NSLP and treasury
     pub total_available: U128String,
 
-    /// The total amount of tokens selected for staking by the users
-    /// not necessarily what's actually staked since staking can is done in batches
-    /// Share price is computed using this number. share_price = total_for_staking/total_shares
     pub total_for_staking: U128String,
 
-    /// The total amount of tokens actually staked (the tokens are in the staking pools)
-    /// During heartbeat(), If !staking_paused && total_for_staking<total_actually_staked, then the difference gets unstaked in 100kN batches
     pub total_actually_staked: U128String,
 
     pub epoch_stake_orders: U128String,
     pub epoch_unstake_orders: U128String,
     pub total_unstaked_and_waiting: U128String,
 
-    // how many "shares" were minted. Every time someone "stakes" he "buys pool shares" with the staked amount
-    // the share price is computed so if he "sells" the shares on that moment he recovers the same near amount
-    // staking produces rewards, so share_price = total_for_staking/total_shares
-    // when someone "unstakes" she "burns" X shares at current price to recoup Y near
     pub total_stake_shares: U128String,
 
-    // How much NEAR 1 stNEAR represents, normally>1
-    // staking produces rewards, so share_price = total_for_staking/total_shares
-    // when someone "unstakes" she "burns" X shares at current price to recoup Y near
     pub st_near_price: U128String,
 
-    /// sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
-    /// when the funds are withdrawn the amount is decremented.
-    /// Control: total_unstaked_claims == reserve_for_unstaked_claims + total_unstaked_and_waiting
     pub total_unstake_claims: U128String,
 
-    /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim that will
-    /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
-    /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
-    /// This amount increments *after* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other.
-    /// This amount also increments at retrieve_from_staking_pool
-    /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
-    /// This amount decrements at unstake-withdraw, sending the NEAR to the user
-    /// Note: There's a extra functionality (quick-exit) that can speed-up unstaking claims if there's funds in this amount.
-    pub reserve_for_unstake_claims: U128String,
+    pub retrieved_for_unstake_claims: U128String, // new name
+    pub reserve_for_unstake_claims: U128String, // old name, keep for backward comp
 
-    /// total meta minted
     pub total_meta: U128String,
 
-    /// the staking pools will add rewards to the staked amount on each epoch
-    /// here we store the accumulated amount only for stats purposes. This amount can only grow
     pub accumulated_staked_rewards: U128String,
 
-    /// How much NEAR is available to immediate unstake (sell stNEAR)
     pub nslp_liquidity: U128String,
     pub nslp_target: U128String,
     pub nslp_stnear_balance: U128String,
     pub nslp_share_price: U128String,
     pub nslp_total_shares: U128String,
 
-    /// Current discount for immediate unstake (sell stNEAR)
     pub nslp_current_discount_basis_points: u16,
     pub nslp_min_discount_basis_points: u16,
     pub nslp_max_discount_basis_points: u16,

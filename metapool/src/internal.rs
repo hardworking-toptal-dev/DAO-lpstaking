@@ -71,25 +71,17 @@ impl MetaPool {
     //------------------------------
     // MIMIC staking-pool, if there are unstaked, it must be free to withdraw
     pub(crate) fn internal_withdraw_use_unstaked(&mut self, requested_amount: u128) -> Promise {
-        self.inner_withdraw(requested_amount, true)
-    }
-    //------------------------------
-    pub(crate) fn internal_withdraw_from_available(&mut self, requested_amount: u128) -> Promise {
-        self.inner_withdraw(requested_amount, false)
-    }
-    //------------------------------
-    fn inner_withdraw(&mut self, requested_amount: u128, from_unstaked: bool) -> Promise {
         let account_id = env::predecessor_account_id();
         let mut account = self.internal_get_account(&account_id);
 
-        if from_unstaked {
-            //MIMIC staking-pool, move 1st form unstaked->available, it must be free to withdraw
-            account.in_memory_try_finish_unstaking(&account_id, requested_amount, self);
-        }
+        //MIMIC staking-pool, move 1st form unstaked->available, it must be free to withdraw
+        account.in_memory_try_finish_unstaking(&account_id, requested_amount, self);
 
+        // NOTE: While ability to withdraw close to all available helps, it prevents lockup contracts from using this in a replacement to a staking pool,
+        // because the lockup contracts relies on exact precise amount being withdrawn.
         let amount = account.take_from_available(requested_amount, self);
 
-        //commented: Remove min_account_balance requirements, increase liq-pool target to  cover all storage requirements
+        //commented: Remove min_account_balance requirements, increase liq-pool target to cover all storage requirements
         //2 reasons: a) NEAR storage was cut by 10x  b) in the simplified flow, users do not keep "available" balance
         // assert!( !acc.is_empty() || acc.available >= self.min_account_balance,
         //     "The min balance for an open account is {} NEAR. You need to close the account to remove all funds",
@@ -97,12 +89,12 @@ impl MetaPool {
 
         self.internal_update_account(&account_id, &account);
         //transfer to user native near account
-        return self.native_transfer_to_predecessor(amount);
+        self.native_transfer_to_predecessor(amount)
     }
     pub(crate) fn native_transfer_to_predecessor(&mut self, amount: u128) -> Promise {
         //transfer to user native near account
         self.contract_account_balance -= amount;
-        return Promise::new(env::predecessor_account_id()).transfer(amount);
+        Promise::new(env::predecessor_account_id()).transfer(amount)
     }
 
     //------------------------------
@@ -143,7 +135,7 @@ impl MetaPool {
     }
 
     //------------------------------
-    /// amount_requested is in NEAR
+    /// delayed_usntake, amount_requested is in yoctoNEARs
     pub(crate) fn internal_unstake(&mut self, amount_requested: u128) {
         self.assert_not_busy();
 
@@ -319,48 +311,32 @@ impl MetaPool {
     }
 
     //----------------------------------
-    pub(crate) fn internal_undo_end_of_epoch(&mut self) {
-        if self.total_for_staking <= self.total_actually_staked {
-            self.epoch_stake_orders = 0;
-            self.epoch_unstake_orders = self.total_actually_staked - self.total_for_staking;
-        } else if self.total_for_staking > self.total_actually_staked {
-            self.epoch_unstake_orders = 0;
-            self.epoch_stake_orders = self.total_for_staking - self.total_actually_staked
-        }
-    }
-
-    //----------------------------------
     // The LP acquires stNEAR providing the liquid-unstake service
     // The LP needs to remove stNEAR automatically, to recover liquidity and to keep a low fee
     // The LP can recover near by internal clearing.
     // returns true if it used internal clearing
     // ---------------------------------
-    pub(crate) fn nslp_try_internal_clearing(&mut self) -> bool {
-        if self.total_for_staking <= self.total_actually_staked {
-            //nothing ordered to be actually staked
-            return false;
-        }
-        // we could have operator-manual-unstakes, so cap to unstake is self.epoch_stake_orders
-        let amount_to_stake: u128 = std::cmp::min(
-            self.epoch_stake_orders,
-            self.total_for_staking - self.total_actually_staked,
-        );
+    pub(crate) fn nslp_try_internal_clearing(&mut self, staked_amount:u128) -> bool {
+        // the user has just staked staked_amount of NEAR, they got stNEAR already
         let mut nslp_account = self.internal_get_nslp_account();
         log!(
             "nslp internal clearing nslp_account.stake_shares {}",
             nslp_account.stake_shares
         );
+        // should not happen
+        assert!(self.epoch_stake_orders >= staked_amount, "ERR in nslp_try_internal_clearing");
+
         if nslp_account.stake_shares > 0 {
             //how much stNEAR do the nslp has?
             let valued_stake_shares = self.amount_from_stake_shares(nslp_account.stake_shares);
             //how much can we liquidate?
-            let (st_near_to_sell, near_value) = if amount_to_stake >= valued_stake_shares {
+            let (st_near_to_sell, near_value) = if staked_amount >= valued_stake_shares {
                 (nslp_account.stake_shares, valued_stake_shares) //all of them
             } else {
                 (
-                    self.stake_shares_from_amount(amount_to_stake),
-                    amount_to_stake,
-                ) //the amount to stake
+                    self.stake_shares_from_amount(staked_amount),
+                    staked_amount,
+                ) //the amount recently staked
             };
 
             log!("NSLP clearing {} {}", st_near_to_sell, near_value);
@@ -371,13 +347,13 @@ impl MetaPool {
                 near_value
             );
 
-            //users made a deposit+mint, and now we need to convert that into a 0-fee swap NEAR<->stNEAR
-            //we take NEAR from the contract, but let the users keep their minted stNEAR
-            //we also burn liq-pool's stNEAR compensating the mint,
+            // users made a deposit+mint, and now we need to convert that into a 0-fee swap NEAR<->stNEAR
+            // we take NEAR from the contract, but let the users keep their minted stNEAR
+            // we also burn liq-pool's stNEAR compensating the mint,
             // so the users' "deposit+mint" gets converted to a "send NEAR to the liq-pool, get stNEAR"
-            self.total_for_staking -= near_value; //nslp gets the NEAR
-            self.epoch_stake_orders -= near_value; //(also reduce stake orders)
-            nslp_account.available += near_value; //nslp has more available now
+            self.total_for_staking -= near_value; // nslp gets the NEAR
+            self.epoch_stake_orders -= near_value; // (also reduce epoch stake orders, that was incremented by user stake action)
+            nslp_account.available += near_value; // nslp has more available now
             self.total_available += near_value; // which must be reflected in contract totals
 
             nslp_account.sub_stake_shares(st_near_to_sell, near_value); //nslp delivers stNEAR in exchange for the NEAR

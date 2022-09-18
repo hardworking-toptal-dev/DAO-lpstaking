@@ -181,7 +181,7 @@ impl MetaPool {
             contract_busy: false,
             staking_paused: old.staking_paused,
             contract_account_balance: old.contract_account_balance,
-            reserve_for_unstake_claims: old.reserve_for_unstake_claims,
+            retrieved_for_unstake_claims: old.reserve_for_unstake_claims,
             total_available: old.total_available,
 
             //-- ORDERS

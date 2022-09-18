@@ -67,7 +67,7 @@ pub trait ExtMetaStakingPoolOwnerCallbacks {
         included_deposit: bool,
     ) -> bool;
 
-    fn on_staking_pool_unstake(&mut self, sp_inx: usize, amount: U128String) -> bool;
+    fn on_staking_pool_unstake(&mut self, sp_inx: usize, amount: U128String, is_rebalance: bool) -> bool;
 
     fn on_get_result_from_transfer_poll(&mut self, #[callback] poll_result: PollResult) -> bool;
 
@@ -113,31 +113,36 @@ pub struct MetaPool {
     /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim that will
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
-    /// This amount increments *after* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other.
-    /// This amount also increments at retrieve_from_staking_pool, all retrieved is considered reserved for unstkae claims
+    /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other
+    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstkae claims
     /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
     /// This amount decrements at user's delayed-unstake-withdraw, when sending the NEAR to the user
     /// Related variables and Invariant:
-    /// reserve_for_unstake_claims = NEAR in the contract, withdrawn in prev epochs
-    /// unstaked_and_waiting = unstaked in prev epochs, waiting, will become reserve
-    /// epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
-    /// Invariant: reserve_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
-    pub reserve_for_unstake_claims: u128,
+    /// retrieved_for_unstake_claims = NEAR in the contract, retrieved in prev epochs (or result of clearing)
+    /// unstaked_and_waiting = delay-unstaked in prev epochs, waiting, will become reserve
+    /// epoch_unstake_orders = delay-unstaked in this epoch, may remain in the contract or start unstaking before EOE
+    /// Invariant: retrieved_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
+    /// IF the sum is > (not ==), then it is implied that a rebalance is in progress, and the extra amount should be restaked
+    pub retrieved_for_unstake_claims: u128,
 
     /// This value is equivalent to sum(accounts.available)
     /// This amount increments with user's deposits_into_available and decrements when users stake_from_available
     /// increments with unstake_to_available and decrements with withdraw_from_available
     /// Note: in the current simplified UI user-flow of the meta-pool, only the NSLP & the treasury can have available balance
-    /// the rest of the users mov directly between their NEAR native accounts & the contract accounts, only briefly occupying acc.available
+    /// the rest of the users move directly between their NEAR native accounts & the contract accounts, only briefly occupying acc.available
     pub total_available: u128,
 
     //-- ORDERS
+    // this two amounts can cancel each other at end_of_epoch_clearing
     /// The total amount of "stake" orders in the current epoch, stNEAR has been minted, NEAR is in the contract, stake might be done before EOE
+    /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch), 
+    /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_stake_orders: u128,
     /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake migth be done before EOE
+    /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
+    /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
-    // this two amounts can cancel each other at end_of_epoch_clearing
-    /// The epoch when the last end_of_epoch_clearing was performed. To avoid calling it twice in the same epoch.
+    /// The epoch when the last end_of_epoch_clearing was performed. Not used, informative
     pub epoch_last_clearing: EpochHeight,
 
     /// The total amount of tokens selected for staking by the users
@@ -157,19 +162,22 @@ pub struct MetaPool {
     // when someone "unstakes" they "burns" X shares at current price to recoup Y near
     pub total_stake_shares: u128, //total stNEAR minted
 
-    /// META is the governance token. Total meta minted
+    /// META is the governance token. Total meta minted by this contract
     pub total_meta: u128,
 
     /// The total amount of tokens actually unstaked and in the waiting-delay (the tokens are in the staking pools)
+    /// equivalent to sum(sp.unstaked)
     pub total_unstaked_and_waiting: u128,
 
-    /// sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
-    /// when the funds are withdrawn the amount is decremented.
+    /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim 
+    /// equal to sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
+    /// when the funds are withdrawn to the user account, the amount is decremented.
     /// Related variables and Invariant:
-    /// reserve_for_unstake_claims = NEAR in the contract, withdrawn in prev epochs
-    /// unstaked_and_waiting = unstaked in prev epochs, waiting, will become reserve
-    /// epoch_unstake_orders = unstaked in this epochs, may remain in the contract or start unstaking EOE
-    /// Invariant: reserve_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
+    /// retrieved_for_unstake_claims = NEAR in the contract, retrieved in prev epochs (or result of clearing)
+    /// unstaked_and_waiting = delay-unstaked in prev epochs, waiting, will become reserve
+    /// epoch_unstake_orders = delay-unstaked in this epoch, may remain in the contract or start unstaking before EOE
+    /// Invariant: retrieved_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
+    /// IF the sum is > (not ==), then it is implied that a rebalance is in progress, and the extra amount should be restaked
     pub total_unstake_claims: u128,
 
     /// the staking pools will add rewards to the staked amount on each epoch
@@ -281,7 +289,7 @@ impl MetaPool {
             total_for_staking: 0,
             total_actually_staked: 0,
             total_unstaked_and_waiting: 0,
-            reserve_for_unstake_claims: 0,
+            retrieved_for_unstake_claims: 0,
             total_unstake_claims: 0,
             epoch_stake_orders: 0,
             epoch_unstake_orders: 0,
@@ -342,8 +350,6 @@ impl MetaPool {
 
     /// Withdraws from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool* .- core-contracts/staking-pool only has "unstaked" to withdraw from
     pub fn withdraw(&mut self, amount: U128String) -> Promise {
-        // NOTE: While ability to withdraw close to all available helps, it prevents lockup contracts from using this in a replacement to a staking pool,
-        // because the lockup contracts relies on exact precise amount being withdrawn.
         self.internal_withdraw_use_unstaked(amount.0)
     }
     /// Withdraws ALL from from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool .- core-contracts/staking-pool only has "unstaked" to withdraw from
@@ -352,27 +358,15 @@ impl MetaPool {
         self.internal_withdraw_use_unstaked(account.unstaked)
     }
 
-    /// user method - simplified flow
-    /// completes delayed-unstake action by transferring from retrieved_from_the_pools to user's NEAR account
-    /// equivalent to core-contracts/staking-pool.withdraw_all
-    pub fn withdraw_unstaked(&mut self) -> Promise {
-        let account = self.internal_get_account(&env::predecessor_account_id());
-        self.internal_withdraw_use_unstaked(account.unstaked)
-    }
-
-    /// meta-pool extension: Withdraws from "available" balance
-    pub fn withdraw_from_available(&mut self, amount: U128String) -> Promise {
-        self.internal_withdraw_from_available(amount.into())
-    }
-
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
     pub fn deposit_and_stake(&mut self) {
         self.internal_deposit();
         self.internal_stake_from_account(env::predecessor_account_id(), env::attached_deposit());
         //----------
-        //check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
-        self.nslp_try_internal_clearing();
+        // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
+        // the amount just deposited, migth be swapped in the liquid-unstake pool
+        self.nslp_try_internal_clearing(env::attached_deposit());
     }
 
     /// Stakes all "unstaked" balance from the inner account of the predecessor.

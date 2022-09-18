@@ -274,7 +274,8 @@ impl MetaPool {
             total_unstaked_and_waiting: self.total_unstaked_and_waiting.into(),
             accumulated_staked_rewards: self.accumulated_staked_rewards.into(),
             total_unstake_claims: self.total_unstake_claims.into(),
-            reserve_for_unstake_claims: self.reserve_for_unstake_claims.into(),
+            retrieved_for_unstake_claims: self.retrieved_for_unstake_claims.into(),
+            reserve_for_unstake_claims: self.retrieved_for_unstake_claims.into(),
             total_stake_shares: self.total_stake_shares.into(), // stNEAR total supply
             st_near_price: self.amount_from_stake_shares(ONE_E24).into(), //how much nears are 1 stNEAR
             total_meta: self.total_meta.into(),
