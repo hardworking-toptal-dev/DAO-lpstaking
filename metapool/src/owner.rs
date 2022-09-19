@@ -315,6 +315,7 @@ impl MetaPool {
             treasury_swap_cut_basis_points: self.treasury_swap_cut_basis_points,
 
             min_deposit_amount: self.min_deposit_amount.into(),
+            min_stake_unstake_amount_movement: MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT.into()
         };
     }
 

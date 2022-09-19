@@ -33,7 +33,7 @@ pub struct OldMetaPool {
     /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim that will
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
-    /// This amount increments *after* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other.
+    /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other.
     /// This amount also increments at retrieve_from_staking_pool
     /// The funds here are *reserved* fro the unstake-claims and can only be user to fulfill those claims
     /// This amount decrements at unstake-withdraw, sending the NEAR to the user
@@ -48,12 +48,12 @@ pub struct OldMetaPool {
     pub total_available: u128,
 
     //-- ORDERS
+    // this two amounts can cancel each other at end_of_epoch_clearing
     /// The total amount of "stake" orders in the current epoch
     pub epoch_stake_orders: u128,
     /// The total amount of "delayed-unstake" orders in the current epoch
     pub epoch_unstake_orders: u128,
-    // this two amounts can cancel each other at end_of_epoch_clearing
-    /// The epoch when the last end_of_epoch_clearing was performed. To avoid calling it twice in the same epoch.
+    /// Not used
     pub epoch_last_clearing: EpochHeight,
 
     /// The total amount of tokens selected for staking by the users

@@ -53,6 +53,7 @@ pub enum Action {
     BotEndOfEpochClearing,
     BotRetrieveFunds,
     BotPingRewards,
+    StartRebalanceUnstake,
     LastAction,
 }
 
@@ -135,6 +136,7 @@ pub fn step_random_action(
         Action::BotEndOfEpochClearing => bot_end_of_epoch_clearing(&sim, &pre),
         Action::BotRetrieveFunds => bot_retrieve(&sim, &pre),
         Action::BotPingRewards => bot_ping_rewards(&sim, &pre),
+        Action::StartRebalanceUnstake => bot_rebalance_unstake(&sim, &pre),
         Action::LastAction => panic!("invalid action"),
     };
 }

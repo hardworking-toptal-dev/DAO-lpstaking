@@ -140,6 +140,16 @@ pub fn view_u128(contract_account: &UserAccount, method: &str, args_json: &str) 
     return as_u128(&result);
 }
 
+pub fn as_u32(v: &Value) -> u32 {
+    return match v.as_i64() {
+        Some(x) => {
+            //println!("{}",x);
+            x as u32
+        }
+        _ => panic!("invalid i64 value {:#?}", v),
+    };
+}
+
 //----------------------
 pub fn call(
     who: &UserAccount,

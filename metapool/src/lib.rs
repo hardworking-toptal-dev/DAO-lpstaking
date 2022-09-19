@@ -7,7 +7,7 @@
 // [NEP-129](https://github.com/nearprotocol/NEPs/pull/129)
 // see also pub fn get_contract_info
 const CONTRACT_NAME: &str = "Metapool";
-const CONTRACT_VERSION: &str = "1.2.1";
+const CONTRACT_VERSION: &str = "2.0.0";
 const DEFAULT_WEB_APP_URL: &str = "https://metapool.app";
 const DEFAULT_AUDITOR_ACCOUNT_ID: &str = "auditors.near";
 
@@ -142,7 +142,7 @@ pub struct MetaPool {
     /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
-    /// The epoch when the last end_of_epoch_clearing was performed. Not used, informative
+    /// Not used
     pub epoch_last_clearing: EpochHeight,
 
     /// The total amount of tokens selected for staking by the users

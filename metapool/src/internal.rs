@@ -263,9 +263,10 @@ impl MetaPool {
             }
         }
         if total_staked == 0 {
+            //initial stake, nothing staked, someone delay-unstaking in contract epoch 0
             return NUM_EPOCHS_TO_UNLOCK;
-        }; //initial stake, nothing staked, someone delay-unstaking in contract epoch 0
-           //all pools are in unstaking-delay, it will take double the time
+        }; 
+        //all pools are in unstaking-delay, it will take double the time
         return 2 * NUM_EPOCHS_TO_UNLOCK;
     }
 
@@ -484,7 +485,7 @@ impl MetaPool {
         return (selected_sp_inx, selected_to_stake_amount);
     }
 
-    /// finds a staking pool requiring some stake to get balanced
+    /// finds a staking pool requiring some unstake to get balanced
     /// WARN: returns (0,0) if no pool requires staking/all are busy
     pub(crate) fn get_staking_pool_requiring_unstake(
         &self,
@@ -497,11 +498,20 @@ impl MetaPool {
         for (sp_inx, sp) in self.staking_pools.iter().enumerate() {
             // if the pool is not busy, has stake
             if !sp.busy_lock && sp.staked > 0 {
-                //if has not unstaked balance waiting for withdrawal, or wait started in this same epoch (no harm in unstaking more)
-                // TODO: Unstaking in the same epoch is only an issue, if you hit the last block of the epoch.
-                //    In this case the receipt may be executed at the next epoch.
+                debug!(r#"{{"event":"gtp.req.unstk {} {}","sp":"{}","amount":"{}"}}"#,
+                sp.unstk_req_epoch_height,
+                env::epoch_height(),
+                sp_inx,
+                sp.unstaked
+                );
+                // if not waiting, or wait started in this same epoch (no harm in unstaking more)
+                // NOTE: Unstaking in the same epoch is only an issue, if you hit the last block of the epoch.
+                //       In this case the receipt may be executed at the next epoch.
+                // NOTE2: core-contracts/staking-pool is imprecise when unstaking, some times 1 to 10 yoctos remain in "unstaked"
+                //        The bot should sincronize unstaked yoctos before calling this function, and that's why we use
+                //        sp.wait_period_ended() as condition instead of sp.unstaked==0
                 if sp.wait_period_ended() || sp.unstk_req_epoch_height == env::epoch_height() {
-                    // if this pool has an unbalance requiring un-staking
+                    // check if this pool has an unbalance requiring un-staking
                     let should_have = apply_pct(sp.weight_basis_points, self.total_for_staking);
                     // does this pool requires un-staking? (has too much staked?)
                     if sp.staked > should_have {
@@ -522,7 +532,7 @@ impl MetaPool {
             if selected_to_unstake_amount > total_to_unstake {
                 selected_to_unstake_amount = total_to_unstake
             };
-            //to avoid moving small amounts, if the remainder is less than 5K and this pool can accommodate the unstaking, increase amount
+            // to avoid moving small amounts, if the remainder is less than 5K and this pool can accommodate the unstaking, increase amount
             let remainder = total_to_unstake - selected_to_unstake_amount;
             if remainder <= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
                 && selected_stake
@@ -673,4 +683,37 @@ impl MetaPool {
         }
         (amount, 0)
     }
+
+    pub(crate) fn internal_end_of_epoch_clearing(&mut self) -> u128{
+
+        self.assert_not_busy();
+        // NOTE: Worth calling this method before any actual staking/unstaking.
+
+        // if any one of the two is zero, we've a pure stake or pure unstake epoch, no clearing
+        // just go and stake or unstake
+        if self.epoch_stake_orders == 0 || self.epoch_unstake_orders == 0 {
+            return 0;
+        }
+
+        // NOTE: `to_keep` can also be computed as `min(self.epoch_stake_orders, self.epoch_unstake_orders)`
+        let to_keep =
+            if self.epoch_stake_orders >= self.epoch_unstake_orders {
+                // if more stake-orders than unstake-orders, we keep the NEAR corresponding to epoch_unstake_orders (delayed unstakes)
+                // we keep it from now, so the users can withdraw in 4 epochs (clearing: no need to stake and then unstake)
+                self.epoch_unstake_orders
+            } else {
+                // if more delayed-unstakes than stakes, we keep at least the stake-orders, the NEAR we have (clearing: no need to stake and then unstake)
+                // and the rest (delta) will be unstakes before EOE
+                self.epoch_stake_orders
+            };
+
+        // we will keep this NEAR (no need to go to the pools). We consider it reserved for unstake_claims, 4 epochs from now
+        self.retrieved_for_unstake_claims += to_keep;
+        // clear opposing orders
+        self.epoch_stake_orders -= to_keep;
+        self.epoch_unstake_orders -= to_keep;
+
+        to_keep
+    }
+    
 }

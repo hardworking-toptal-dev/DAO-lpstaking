@@ -42,7 +42,7 @@ pub const NUM_EPOCHS_TO_UNLOCK: EpochHeight = 4; //0 for testing in guild-net, 4
 /// contract code storage and some internal state.
 pub const MIN_BALANCE_FOR_STORAGE: u128 = 35_000_000_000_000_000_000_000_000;
 /// if the remainder falls below this amount, it's included in the current movement
-pub const MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT: u128 = 5 * K_NEAR;
+pub const MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT: u128 = 1 * K_NEAR;
 
 //cut on swap fees
 pub const DEFAULT_TREASURY_SWAP_CUT_BASIS_POINTS: u16 = 2500; // 25% swap fees go to Treasury
@@ -254,6 +254,7 @@ pub struct ContractParamsJSON {
     /// treasury_cut_basis_points.
     pub treasury_swap_cut_basis_points: u16,
     pub min_deposit_amount: U128String,
+    pub min_stake_unstake_amount_movement: U128String
 }
 
 #[derive(Serialize)]
