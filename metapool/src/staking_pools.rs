@@ -60,6 +60,9 @@ impl StakingPoolInfo {
         self.staked + self.unstaked
     }
 
+    // sometimes the core-contracts/stake-pool does not unstakes all, it leaves a few yoctos as "unstaked" 
+    // so we trust the bot to retrieve all unstaked at the start of the epoch, and in orde to know
+    // if a sp can be unstaked again, we just check that the last unstake waiting period is over
     pub fn wait_period_ended(&self) -> bool {
         let epoch_height = env::epoch_height();
         if self.unstk_req_epoch_height > epoch_height {
