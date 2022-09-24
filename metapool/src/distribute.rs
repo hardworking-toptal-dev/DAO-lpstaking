@@ -290,7 +290,7 @@ impl MetaPool {
         }
 
         // resulting "amount_to_unstake" can be lower than total_to_unstake, according to conditions in get_staking_pool_requiring_unstake 
-        let (sp_inx, amount_to_unstake) = self.get_staking_pool_requiring_unstake(total_to_unstake);
+        let (sp_inx, amount_to_unstake) = self.internal_get_staking_pool_requiring_unstake(total_to_unstake);
         if amount_to_unstake > 10 * TGAS as u128 {
             // only if the amount justifies tx-fee
             // most unbalanced pool found & available
@@ -752,8 +752,7 @@ impl MetaPool {
         sp.busy_lock = true;
 
         //return promise
-        return ext_staking_pool::withdraw(
-            sp.unstaked.into(),
+        return ext_staking_pool::withdraw_all(
             //promise params:
             &sp.account_id,
             NO_DEPOSIT,
