@@ -180,10 +180,10 @@ impl Simulation {
         init_method:new(owner.account_id(), treasury.account_id(), operator.account_id(), "meta_token_contract_account".into())
         );
 
-        //deploy all the staking pools
+        // deploy all the staking pools and register with meta_pool
         let mut sp = Vec::with_capacity(4);
-        //---- and register staking pools in the metapool contract
-        let weight_basis_points_vec = vec![15, 40, 25, 20];
+        let weights_vec: Vec<u8> = vec![15, 40, 25, 20];
+        let mut weight_basis_points_vec: Vec<u16> = Vec::with_capacity(4);
         let mut pools:Vec<StakingPoolArgItem> = Vec::with_capacity(4);
         //----
         for n in 0..=3 {
@@ -200,10 +200,12 @@ impl Simulation {
             );
             check_exec_result(&res);
             // prepare weight
-                pools.push ( StakingPoolArgItem {
+            let weight_bp = weights_vec[n] as u16 * 100;
+            pools.push ( StakingPoolArgItem {
                 account_id: acc_id.clone(),
-                weight_basis_points: weight_basis_points_vec[n] * 100
+                weight_basis_points: weight_bp
             });
+            weight_basis_points_vec.push(weight_bp);
         }
         let res=call!(
             owner,

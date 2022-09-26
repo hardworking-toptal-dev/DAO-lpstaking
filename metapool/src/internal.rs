@@ -7,6 +7,16 @@ use near_sdk::{
 pub use crate::types::*;
 pub use crate::utils::*;
 
+const UNSTAKED_YOCTOS_TO_IGNORE:u128 = 100;
+
+pub struct GSPRUResult {
+    pub sp_inx:u16, 
+    pub extra:u128, 
+    pub count_unblocked:u16,
+    pub count_with_stake:u16,
+    pub total_extra:u128
+}
+
 /****************************/
 /* general Internal methods */
 /****************************/
@@ -100,7 +110,11 @@ impl MetaPool {
     //------------------------------
     /// takes from account.available and mints stNEAR for account_id
     /// actual stake in a staking-pool is made by the meta-pool-heartbeat before the end of the epoch
-    pub(crate) fn internal_stake_from_account(&mut self, account_id: AccountId, near_amount: Balance) {
+    pub(crate) fn internal_stake_from_account(
+        &mut self,
+        account_id: AccountId,
+        near_amount: Balance,
+    ) {
         self.assert_not_busy();
 
         self.assert_min_deposit_amount(near_amount);
@@ -131,7 +145,6 @@ impl MetaPool {
             account_id,
             amount
         );
-
     }
 
     //------------------------------
@@ -265,7 +278,7 @@ impl MetaPool {
         if total_staked == 0 {
             //initial stake, nothing staked, someone delay-unstaking in contract epoch 0
             return NUM_EPOCHS_TO_UNLOCK;
-        }; 
+        };
         //all pools are in unstaking-delay, it will take double the time
         return 2 * NUM_EPOCHS_TO_UNLOCK;
     }
@@ -317,7 +330,7 @@ impl MetaPool {
     // The LP can recover near by internal clearing.
     // returns true if it used internal clearing
     // ---------------------------------
-    pub(crate) fn nslp_try_internal_clearing(&mut self, staked_amount:u128) -> bool {
+    pub(crate) fn nslp_try_internal_clearing(&mut self, staked_amount: u128) -> bool {
         // the user has just staked staked_amount of NEAR, they got stNEAR already
         let mut nslp_account = self.internal_get_nslp_account();
         log!(
@@ -325,7 +338,10 @@ impl MetaPool {
             nslp_account.stake_shares
         );
         // should not happen
-        assert!(self.epoch_stake_orders >= staked_amount, "ERR in nslp_try_internal_clearing");
+        assert!(
+            self.epoch_stake_orders >= staked_amount,
+            "ERR in nslp_try_internal_clearing"
+        );
 
         if nslp_account.stake_shares > 0 {
             //how much stNEAR do the nslp has?
@@ -334,10 +350,7 @@ impl MetaPool {
             let (st_near_to_sell, near_value) = if staked_amount >= valued_stake_shares {
                 (nslp_account.stake_shares, valued_stake_shares) //all of them
             } else {
-                (
-                    self.stake_shares_from_amount(staked_amount),
-                    staked_amount,
-                ) //the amount recently staked
+                (self.stake_shares_from_amount(staked_amount), staked_amount) //the amount recently staked
             };
 
             log!("NSLP clearing {} {}", st_near_to_sell, near_value);
@@ -448,7 +461,7 @@ impl MetaPool {
 
     /// finds a staking pool requiring some stake to get balanced
     /// WARN: (returns 0,0) if no pool requires staking/all are busy
-    pub(crate) fn get_staking_pool_requiring_stake(&self, total_to_stake: u128) -> (usize, u128) {
+    pub(crate) fn get_staking_pool_requiring_stake(&self) -> (usize, u128) {
         let mut selected_to_stake_amount: u128 = 0;
         let mut selected_sp_inx: usize = 0;
 
@@ -470,57 +483,54 @@ impl MetaPool {
             }
         }
 
-        if selected_to_stake_amount > 0 {
-            //to avoid moving small amounts, if the remainder is less than MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
-            // **increase** amount to include all in this movement
-            if selected_to_stake_amount > total_to_stake {
-                selected_to_stake_amount = total_to_stake
-            };
-            let remainder = total_to_stake - selected_to_stake_amount;
-            if remainder <= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT {
-                selected_to_stake_amount += remainder
-            };
-        }
-
         return (selected_sp_inx, selected_to_stake_amount);
     }
 
     /// finds a staking pool requiring some unstake to get balanced
-    /// WARN: returns (0,0) if no pool requires staking/all are busy
-    pub(crate) fn get_staking_pool_requiring_unstake(
-        &self,
-        total_to_unstake: u128,
-    ) -> (usize, u128) {
-        let mut selected_to_unstake_amount: u128 = 0;
-        let mut selected_stake: u128 = 0;
+    /// WARN: returns (0,0) if no pool requires unstaking/all are busy
+    pub(crate) fn internal_get_staking_pool_requiring_unstake(&self) -> GSPRUResult {
         let mut selected_sp_inx: usize = 0;
+        let mut selected_extra_amount: u128 = 0;
+        let mut total_extra: u128 = 0;
+        let mut count_unblocked: u16 = 0;
+        let mut count_with_stake: u16 = 0;
 
         for (sp_inx, sp) in self.staking_pools.iter().enumerate() {
             // if the pool is not busy, has stake
             if !sp.busy_lock && sp.staked > 0 {
-                debug!(r#"{{"event":"gtp.req.unstk {} {}","sp":"{}","amount":"{}"}}"#,
-                sp.unstk_req_epoch_height,
-                env::epoch_height(),
-                sp_inx,
-                sp.unstaked
+                // count how how many sps are unblocked, i.e. can receive an unstake request
+                count_with_stake += 1;
+                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE { // 100 yoctos
+                    count_unblocked += 1
+                };
+                // check if this pool has an unbalance requiring un-staking
+                let should_have = apply_pct(sp.weight_basis_points, self.total_for_staking);
+                debug!(
+                    r#"{{"event":"gtp.req.unstk shld:{} extra:{} unstk:{} w:{} {} {}","sp":"{}","amount":"{}"}}"#,
+                    should_have / NEAR,
+                    sp.staked.saturating_sub(should_have) / NEAR,
+                    sp.unstaked / NEAR,
+                    sp.weight_basis_points,
+                    sp.unstk_req_epoch_height,
+                    env::epoch_height(),
+                    sp_inx,
+                    sp.staked
                 );
                 // if not waiting, or wait started in this same epoch (no harm in unstaking more)
                 // NOTE: Unstaking in the same epoch is only an issue, if you hit the last block of the epoch.
                 //       In this case the receipt may be executed at the next epoch.
                 // NOTE2: core-contracts/staking-pool is imprecise when unstaking, some times 1 to 10 yoctos remain in "unstaked"
-                //        The bot should sincronize unstaked yoctos before calling this function, and that's why we use
-                //        sp.wait_period_ended() as condition instead of sp.unstaked==0
-                if sp.wait_period_ended() || sp.unstk_req_epoch_height == env::epoch_height() {
-                    // check if this pool has an unbalance requiring un-staking
-                    let should_have = apply_pct(sp.weight_basis_points, self.total_for_staking);
+                //        The bot should sincronize unstaked yoctos before calling this function.
+                // We assume that if sp.unstaked>100 yoctos, a new unstake will cause that amount to be blocked
+                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE || sp.unstk_req_epoch_height == env::epoch_height() {
                     // does this pool requires un-staking? (has too much staked?)
                     if sp.staked > should_have {
                         // how much?
-                        let unstake_amount = sp.staked - should_have;
+                        let extra = sp.staked - should_have;
+                        total_extra += extra;
                         // is this the most unbalanced pool so far?
-                        if unstake_amount > selected_to_unstake_amount {
-                            selected_to_unstake_amount = unstake_amount;
-                            selected_stake = sp.staked;
+                        if extra > selected_extra_amount {
+                            selected_extra_amount = extra;
                             selected_sp_inx = sp_inx;
                         }
                     }
@@ -528,20 +538,12 @@ impl MetaPool {
             }
         }
 
-        if selected_to_unstake_amount > 0 {
-            if selected_to_unstake_amount > total_to_unstake {
-                selected_to_unstake_amount = total_to_unstake
-            };
-            // to avoid moving small amounts, if the remainder is less than 5K and this pool can accommodate the unstaking, increase amount
-            let remainder = total_to_unstake - selected_to_unstake_amount;
-            if remainder <= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
-                && selected_stake
-                    > selected_to_unstake_amount + remainder + 2 * MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
-            {
-                selected_to_unstake_amount += remainder
-            };
-        }
-        return (selected_sp_inx, selected_to_unstake_amount);
+        GSPRUResult {
+            sp_inx: selected_sp_inx as u16, 
+            extra: selected_extra_amount, 
+            count_unblocked, 
+            count_with_stake, 
+            total_extra}
     }
 
     pub fn internal_st_near_transfer(
@@ -684,36 +686,65 @@ impl MetaPool {
         (amount, 0)
     }
 
-    pub(crate) fn internal_end_of_epoch_clearing(&mut self) -> u128{
-
+    pub(crate) fn internal_end_of_epoch_clearing(&mut self) {
         self.assert_not_busy();
-        // NOTE: Worth calling this method before any actual staking/unstaking.
+        // This method is called before any actual staking/unstaking.
 
         // if any one of the two is zero, we've a pure stake or pure unstake epoch, no clearing
         // just go and stake or unstake
         if self.epoch_stake_orders == 0 || self.epoch_unstake_orders == 0 {
-            return 0;
+            return 
         }
 
         // NOTE: `to_keep` can also be computed as `min(self.epoch_stake_orders, self.epoch_unstake_orders)`
-        let to_keep =
-            if self.epoch_stake_orders >= self.epoch_unstake_orders {
-                // if more stake-orders than unstake-orders, we keep the NEAR corresponding to epoch_unstake_orders (delayed unstakes)
-                // we keep it from now, so the users can withdraw in 4 epochs (clearing: no need to stake and then unstake)
-                self.epoch_unstake_orders
-            } else {
-                // if more delayed-unstakes than stakes, we keep at least the stake-orders, the NEAR we have (clearing: no need to stake and then unstake)
-                // and the rest (delta) will be unstakes before EOE
-                self.epoch_stake_orders
-            };
+        let to_keep = if self.epoch_stake_orders >= self.epoch_unstake_orders {
+            // if more stake-orders than unstake-orders, we keep the NEAR corresponding to epoch_unstake_orders (delayed unstakes)
+            // we keep it from now, so the users can withdraw in 4 epochs (clearing: no need to stake and then unstake)
+            self.epoch_unstake_orders
+        } else {
+            // if more delayed-unstakes than stakes, we keep at least the stake-orders, the NEAR we have (clearing: no need to stake and then unstake)
+            // and the rest (delta) will be unstakes before EOE
+            self.epoch_stake_orders
+        };
 
-        // we will keep this NEAR (no need to go to the pools). We consider it reserved for unstake_claims, 4 epochs from now
-        self.retrieved_for_unstake_claims += to_keep;
         // clear opposing orders
         self.epoch_stake_orders -= to_keep;
         self.epoch_unstake_orders -= to_keep;
+        event!(r#"{{"event":"clr.ord","keep":"{}"}}"#, to_keep);
 
-        to_keep
+        // we will keep this NEAR (no need to go to the pools). We consider it reserved for unstake_claims, 4 epochs from now
+        // or maybe some part could be put again in epoch_stake_orders to re-stake
+        self.consider_retrieved_for_unstake_claims(to_keep);
     }
-    
+
+    /// if we have to add some funds to retrieved_for_unstake_claims
+    /// this fn consider possible "extra" funds coming from rebalances and
+    /// send those to epochs_stake_orders to be restaked
+    pub(crate) fn consider_retrieved_for_unstake_claims(&mut self, amount: u128) {
+        self.retrieved_for_unstake_claims += amount;
+
+        // CONSIDER REBALANCE:
+        // we retrieved funds and incremented "retrieved_for_unstake_claims"
+        // BUT this retrieval could originate from a rebalance action,
+        // so we check if we have more NEAR in the contract than the amount we need for total_unstake_claims,
+        // and if we do, then put the extra NEAR to re-stake, thus completing the rebalance
+        // Note: we're ignoring unstaked_and_waiting and current epoch_unstake_orders, because reserve_for_unstake_claims has priority
+        if self.retrieved_for_unstake_claims > self.total_unstake_claims {
+            // confirmed extra to rebalance
+            let extra = self.retrieved_for_unstake_claims - self.total_unstake_claims;
+            self.retrieved_for_unstake_claims -= extra; // remove extra from reserve
+            self.epoch_stake_orders += extra; // put it in epoch_stake_orders, so the funds are re-staked before EOE
+            self.unstaked_for_rebalance = self.unstaked_for_rebalance.saturating_sub(extra); // no longer waiting
+
+            //log event
+            event!(
+                r#"{{"event":"rebalance","extra":"{}","retrieved_for_unstake_claims":"{}","total_unstake_claims":"{}","ufr":"{}"}}"#,
+                extra,
+                self.retrieved_for_unstake_claims,
+                self.total_unstake_claims,
+                self.unstaked_for_rebalance,
+            );
+        }
+    }
+
 }

@@ -67,7 +67,12 @@ pub trait ExtMetaStakingPoolOwnerCallbacks {
         included_deposit: bool,
     ) -> bool;
 
-    fn on_staking_pool_unstake(&mut self, sp_inx: usize, amount: U128String, is_rebalance: bool) -> bool;
+    fn on_staking_pool_unstake(&mut self, 
+        sp_inx: usize,
+        amount_from_unstake_orders: U128String, 
+        amount_from_rebalance: U128String, 
+    ) 
+    -> bool;
 
     fn on_get_result_from_transfer_poll(&mut self, #[callback] poll_result: PollResult) -> bool;
 
@@ -123,6 +128,7 @@ pub struct MetaPool {
     /// epoch_unstake_orders = delay-unstaked in this epoch, may remain in the contract or start unstaking before EOE
     /// Invariant: retrieved_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
     /// IF the sum is > (not ==), then it is implied that a rebalance is in progress, and the extra amount should be restaked
+    /// NOTE: use always fn self.consider_retrieved_for_unstake_claims(amount) to increase this accumulator
     pub retrieved_for_unstake_claims: u128,
 
     /// This value is equivalent to sum(accounts.available)
@@ -241,6 +247,14 @@ pub struct MetaPool {
     pub max_meta_rewards_stakers: u128,
     pub max_meta_rewards_lu: u128, //liquid-unstakers
     pub max_meta_rewards_lp: u128, //liquidity-providers
+
+    /// up to 1% of the total pool can be unstaked for rebalance (no more than 1% to not affect APY)
+    pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
+    /// when some unstake for rebalance is executed, this amountis increased 
+    /// when some extra is retrieved or recovered in EOE clearing, it is decremented
+    /// represents the amount that's not stake because is in transit for rebalance. 
+    /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
+    pub unstaked_for_rebalance: u128,
 }
 
 #[near_bindgen]
@@ -317,6 +331,8 @@ impl MetaPool {
             max_meta_rewards_stakers: 1_000_000 * ONE_NEAR,
             max_meta_rewards_lu: 50_000 * ONE_NEAR,
             max_meta_rewards_lp: 100_000 * ONE_NEAR,
+            unstaked_for_rebalance: 0,
+            unstake_for_rebalance_cap_bp: 100,
         };
         //all key accounts must be different
         result.assert_key_accounts_are_different();

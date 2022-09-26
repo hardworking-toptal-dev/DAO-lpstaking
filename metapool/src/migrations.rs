@@ -233,6 +233,9 @@ impl MetaPool {
             max_meta_rewards_stakers: old.max_meta_rewards_stakers,
             max_meta_rewards_lu: old.max_meta_rewards_lu,
             max_meta_rewards_lp: old.max_meta_rewards_lp,
+
+            unstaked_for_rebalance: 0, // ***************** CHANGE, TAKE FROM OLD 
+            unstake_for_rebalance_cap_bp: 100, // ***************** CHANGE, TAKE FROM OLD
         };
     }
 }

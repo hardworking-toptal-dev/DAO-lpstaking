@@ -1692,7 +1692,7 @@ dependencies = [
  "lazy_static",
  "log",
  "near-contract-standards",
- "near-sdk 3.1.0 (git+https://github.com/near/near-sdk-rs)",
+ "near-sdk 3.1.0 (git+https://github.com/near/near-sdk-rs.git?tag=3.1.0)",
  "near-sdk-sim",
  "quickcheck",
  "quickcheck_macros",
@@ -1729,9 +1729,9 @@ dependencies = [
 [[package]]
 name = "near-contract-standards"
 version = "3.1.0"
-source = "git+https://github.com/near/near-sdk-rs#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
+source = "git+https://github.com/near/near-sdk-rs.git?tag=3.1.0#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
 dependencies = [
- "near-sdk 3.1.0 (git+https://github.com/near/near-sdk-rs)",
+ "near-sdk 3.1.0 (git+https://github.com/near/near-sdk-rs.git?tag=3.1.0)",
 ]
 
 [[package]]
@@ -2040,13 +2040,13 @@ dependencies = [
 [[package]]
 name = "near-sdk"
 version = "3.1.0"
-source = "git+https://github.com/near/near-sdk-rs#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
+source = "git+https://github.com/near/near-sdk-rs.git?tag=3.1.0#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
 dependencies = [
  "base64 0.13.0",
  "borsh 0.8.2",
  "bs58 0.4.0",
  "near-primitives-core 0.4.0",
- "near-sdk-macros 3.1.0 (git+https://github.com/near/near-sdk-rs)",
+ "near-sdk-macros 3.1.0 (git+https://github.com/near/near-sdk-rs.git?tag=3.1.0)",
  "near-vm-logic 4.0.0-pre.1",
  "serde",
  "serde_json",
@@ -2080,7 +2080,7 @@ dependencies = [
 [[package]]
 name = "near-sdk-core"
 version = "3.1.0"
-source = "git+https://github.com/near/near-sdk-rs#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
+source = "git+https://github.com/near/near-sdk-rs.git?tag=3.1.0#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
 dependencies = [
  "Inflector",
  "proc-macro2",
@@ -2115,9 +2115,9 @@ dependencies = [
 [[package]]
 name = "near-sdk-macros"
 version = "3.1.0"
-source = "git+https://github.com/near/near-sdk-rs#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
+source = "git+https://github.com/near/near-sdk-rs.git?tag=3.1.0#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
 dependencies = [
- "near-sdk-core 3.1.0 (git+https://github.com/near/near-sdk-rs)",
+ "near-sdk-core 3.1.0 (git+https://github.com/near/near-sdk-rs.git?tag=3.1.0)",
  "proc-macro2",
  "quote",
  "syn",
@@ -2126,7 +2126,7 @@ dependencies = [
 [[package]]
 name = "near-sdk-sim"
 version = "3.1.0"
-source = "git+https://github.com/near/near-sdk-rs#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
+source = "git+https://github.com/near/near-sdk-rs.git?tag=3.1.0#bac0ec71395c93620b215573bbaf5a4e4a9b8e85"
 dependencies = [
  "funty",
  "lazy-static-include",
@@ -2134,7 +2134,7 @@ dependencies = [
  "near-pool",
  "near-primitives 0.1.0-pre.1",
  "near-runtime",
- "near-sdk 3.1.0 (git+https://github.com/near/near-sdk-rs)",
+ "near-sdk 3.1.0 (git+https://github.com/near/near-sdk-rs.git?tag=3.1.0)",
  "near-store",
  "near-vm-logic 4.0.0-pre.1",
 ]

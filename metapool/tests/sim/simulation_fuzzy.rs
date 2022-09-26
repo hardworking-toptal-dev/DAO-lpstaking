@@ -54,6 +54,7 @@ pub enum Action {
     BotRetrieveFunds,
     BotPingRewards,
     StartRebalanceUnstake,
+    ChangePoolsWeight,
     LastAction,
 }
 
@@ -137,6 +138,7 @@ pub fn step_random_action(
         Action::BotRetrieveFunds => bot_retrieve(&sim, &pre),
         Action::BotPingRewards => bot_ping_rewards(&sim, &pre),
         Action::StartRebalanceUnstake => bot_rebalance_unstake(&sim, &pre),
+        Action::ChangePoolsWeight => bot_change_pools_weight(&sim, &pre),
         Action::LastAction => panic!("invalid action"),
     };
 }
@@ -149,6 +151,16 @@ const END_SEED: u16 = START_SEED + SEED_COUNT;
 struct SeedResults {
     seed: u64,
     steps_ok: u16,
+}
+
+fn execute_assume_ok(f: &dyn Fn(&Simulation, &State)->Result<StateAndDiff,String>, sim: &Simulation, start: &State) -> State
+{
+    match f(&sim, &start) {
+        Err(x) => panic!("{}", x),
+        Ok(data) => {
+            data.state
+        }
+    }
 }
 
 #[test]
@@ -167,6 +179,9 @@ fn simulation_fuzzy() {
         // }
 
         let sim = Simulation::new();
+
+        // extra init
+        crate::sim_contract_state::set_unstake_for_rebalance_cap_bp(100, &sim);
 
         let metapool = &sim.metapool;
 
@@ -250,21 +265,36 @@ fn simulation_fuzzy() {
             steps_ok: count_steps_ok,
         });
 
-        //ordered end of epoch
-        let _r0 = bot_ping_rewards(&sim, &state);
-        let _r1 = bot_distributes(&sim, &state);
-        let _r2 = bot_retrieve(&sim, &state);
-        let result = bot_end_of_epoch_clearing(&sim, &state);
+        // orderly end of epoch
+        crate::sim_contract_state::set_unstake_for_rebalance_cap_bp(0, &sim);
+        state = execute_assume_ok(&bot_ping_rewards, &sim, &state);
+        state = execute_assume_ok(&bot_distributes,&sim, &state);
+        // advance 4 epochs to allow retrieve all
+        state = execute_assume_ok(&bot_ping_rewards, &sim, &state);
+        state = execute_assume_ok(&bot_ping_rewards, &sim, &state);
+        state = execute_assume_ok(&bot_ping_rewards, &sim, &state);
+        state = execute_assume_ok(&bot_ping_rewards, &sim, &state);
+        // retrieve
+        state = execute_assume_ok(&bot_retrieve,&sim, &state);
+        // after retrieve we can have something to rebalance (restake), so try distribute again
+        state = execute_assume_ok(&bot_distributes,&sim, &state);
 
+        let result = bot_end_of_epoch_clearing(&sim, &state);
         //after orderly end_of_epoch check stricter invariants
         if let Ok(res) = &result {
             if res.state.epoch_stake_orders != 0 || res.state.epoch_unstake_orders != 0 {
                 // both must be 0 after an orderly end_of_epoch
-                panic!("after orderly end_of_epoch_clearing epoch_stake_orders {} epoch_unstake_orders {}",res.state.epoch_stake_orders,res.state.epoch_unstake_orders)
+                panic!("after orderly end_of_epoch_clearing epoch_stake_orders {} epoch_unstake_orders {}",
+                    res.state.epoch_stake_orders,
+                    res.state.epoch_unstake_orders)
             }
             //no delta should remain
             if res.state.to_stake_delta != 0 {
-                panic!("after orderly end_of_epoch_clearing epoch_stake_orders {} epoch_unstake_orders {}",res.state.epoch_stake_orders,res.state.epoch_unstake_orders)
+                panic!("after orderly end_of_epoch_clearing to_stake_delta != 0, is {}, TFS:{} TAS:{}",
+                    res.state.to_stake_delta, 
+                    res.state.total_for_staking, 
+                    res.state.total_actually_staked
+                )
             }
         }
     } // x seeds

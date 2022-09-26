@@ -1,9 +1,20 @@
 use crate::*;
 use near_sdk::{near_bindgen, Promise, PublicKey};
+use near_sdk::serde::{Serialize};
+
+#[derive(Serialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct GSPRUResultJson {
+    sp_inx:u16, 
+    extra:U128String, 
+    count_unblocked:u16,
+    count_with_stake:u16,
+    total_extra:U128String
+}
 
 #[near_bindgen]
 impl MetaPool {
-    // OWNER'S METHODS and getters
+    // OWNER'S METHODS and other general view-methods
 
     /// Adds full access key with the given public key to the account once the contract is empty
     /// (has no accounts)
@@ -275,7 +286,7 @@ impl MetaPool {
             accumulated_staked_rewards: self.accumulated_staked_rewards.into(),
             total_unstake_claims: self.total_unstake_claims.into(),
             retrieved_for_unstake_claims: self.retrieved_for_unstake_claims.into(),
-            reserve_for_unstake_claims: self.retrieved_for_unstake_claims.into(),
+            reserve_for_unstake_claims: self.retrieved_for_unstake_claims.into(), // old name keep for backward compat
             total_stake_shares: self.total_stake_shares.into(), // stNEAR total supply
             st_near_price: self.amount_from_stake_shares(ONE_E24).into(), //how much nears are 1 stNEAR
             total_meta: self.total_meta.into(),
@@ -297,6 +308,7 @@ impl MetaPool {
             max_meta_rewards_stakers: self.max_meta_rewards_stakers.into(),
             max_meta_rewards_lu: self.max_meta_rewards_lu.into(), //liquid-unstakers
             max_meta_rewards_lp: self.max_meta_rewards_lp.into(), //liquidity-providers
+            unstaked_for_rebalance: self.unstaked_for_rebalance.into(), //floating for rebalance
         };
     }
 
@@ -315,7 +327,8 @@ impl MetaPool {
             treasury_swap_cut_basis_points: self.treasury_swap_cut_basis_points,
 
             min_deposit_amount: self.min_deposit_amount.into(),
-            min_stake_unstake_amount_movement: MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT.into()
+            min_stake_unstake_amount_movement: MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT.into(),
+            unstake_for_rebalance_cap_bp: self.unstake_for_rebalance_cap_bp,
         };
     }
 
@@ -336,6 +349,8 @@ impl MetaPool {
         self.treasury_swap_cut_basis_points = params.treasury_swap_cut_basis_points;
 
         self.min_deposit_amount = params.min_deposit_amount.0;
+        assert!(params.unstake_for_rebalance_cap_bp<2000); // hard coded limit, no more than 20%
+        self.unstake_for_rebalance_cap_bp = params.unstake_for_rebalance_cap_bp;
     }
 
     /// Sets contract parameters
@@ -376,4 +391,18 @@ impl MetaPool {
             busy_lock: sp.busy_lock,
         };
     }
+
+    pub fn get_staking_pool_requiring_unstake(self) -> GSPRUResultJson 
+    {
+        let gspru = self.internal_get_staking_pool_requiring_unstake();
+        GSPRUResultJson {
+            sp_inx: gspru.sp_inx, 
+            extra: gspru.extra.into(),
+            count_unblocked: gspru.count_unblocked,
+            count_with_stake: gspru.count_with_stake,
+            total_extra: gspru.total_extra.into(),
+        }
+    }
+
+
 }

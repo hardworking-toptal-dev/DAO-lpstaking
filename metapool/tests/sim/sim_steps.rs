@@ -17,6 +17,9 @@ use near_sdk_sim::{
     STORAGE_AMOUNT,
 };
 
+use rand::{Rng, SeedableRng};
+use rand_pcg::Pcg32;
+
 //
 // desk check aka algorithm test plan
 //
@@ -53,10 +56,10 @@ pub fn bot_end_of_epoch_clearing(sim: &Simulation, start: &State) -> Result<Stat
 
     //after end_of_epoch_clearing check invariants
     if let Ok(res) = &result {
-        if res.state.unstake_claims_available_sum < res.state.unstake_claims {
+        if res.state.unstake_claims_available_long_term < res.state.unstake_claims {
             panic!(
-                "unstake_claims_available_sum {} < unstake_claims {}",
-                res.state.unstake_claims_available_sum, res.state.unstake_claims
+                "unstake_claims_available_long_term {} < unstake_claims {}",
+                res.state.unstake_claims_available_long_term, res.state.unstake_claims
             )
         }
         if res.state.epoch_stake_orders != 0 && res.state.epoch_unstake_orders != 0 {
@@ -79,6 +82,7 @@ pub fn bot_distributes(sim: &Simulation, start: &State) -> Result<StateAndDiff, 
 
     // END_OF_EPOCH Task 1: check if there is the need to stake
     let mut more_work: bool = state.total_for_staking > state.total_actually_staked;
+    println!("--bot_distributes TFS:{} TAS:{}, {}, {}", state.total_for_staking/NEAR , state.total_actually_staked/NEAR, more_work, state.epoch_unstake_orders);
     while more_work {
         println!("--CALL metapool.distribute_staking");
         match step_call(
@@ -104,7 +108,7 @@ pub fn bot_distributes(sim: &Simulation, start: &State) -> Result<StateAndDiff, 
     }
 
     // END_OF_EPOCH Task 1: check if there is the need to unstake
-    more_work = state.total_actually_staked > state.total_for_staking;
+    more_work = state.epoch_unstake_orders > 0;
     while more_work {
         println!("--CALL metapool.distribute_unstaking");
         match step_call(
@@ -141,99 +145,129 @@ pub fn apply_pct(basis_points: u16, amount: u128) -> u128 {
     return (U256::from(basis_points) * U256::from(amount) / U256::from(10_000)).as_u128();
 }
 
-/// finds a staking pool requiring some stake to get balanced
-/// WARN: returns (0,0) if no pool requires staking/all are busy
-fn get_staking_pool_requiring_unstake(
-    state: &State,
-    total_to_unstake: u128,
-) -> (usize, u128) {
-    let mut selected_to_unstake_amount: u128 = 0;
-    let mut selected_stake: u128 = 0;
-    let mut selected_sp_inx: usize = 0;
+// fn wait_period_ended(sp:&Value, state:&State) -> bool {
+//     if as_u128(&sp["unstaked_requested_epoch_height"]) > state.epoch as u128 {
+//         //bad data at unstk_req_epoch_height or there was a hard-fork
+//         return true;
+//     }
+//     //true if we reached epoch_requested+NUM_EPOCHS_TO_UNLOCK
+//     return state.epoch as u128 >= as_u128(&sp["unstaked_requested_epoch_height"]) + NUM_EPOCHS_TO_UNLOCK as u128;
+// }
 
-    for (sp_inx, sp) in state.sps.iter().enumerate() {
-        // if the pool is not busy, has stake
-        let staked = as_u128(&sp["staked"]);
-        let unstaked = as_u128(&sp["unstaked"]);
-        let w = as_u32(&sp["weight_basis_points"]);
-        let should_have = state.total_for_staking * w as u128 / 10_000;
-        if staked > 0 {
-            //if has not unstaked balance waiting for withdrawal, or wait started in this same epoch (no harm in unstaking more)
-            if unstaked == 0 || as_u128(&sp["unstaked_requested_epoch_height"]) == state.epoch as u128 {
-                // if this pool has an unbalance requiring un-staking
-                let should_have = apply_pct(w as u16, state.total_for_staking);
-                // does this pool requires un-staking? (has too much staked?)
-                if staked > should_have {
-                    // how much?
-                    let unstake_amount = staked - should_have;
-                    // is this the most unbalanced pool so far?
-                    if unstake_amount > selected_to_unstake_amount {
-                        selected_to_unstake_amount = unstake_amount;
-                        selected_stake = staked;
-                        selected_sp_inx = sp_inx;
-                    }
-                }
-            }
+// /// finds a staking pool requiring some stake to get balanced
+// /// WARN: returns (0,0) if no pool requires staking/all are busy
+// fn get_staking_pool_requiring_unstake(
+//     state: &State,
+// ) -> (usize, u128, u16) {
+//     let mut selected_to_unstake_amount: u128 = 0;
+//     let mut selected_sp_inx: usize = 0;
+//     let mut count_unblocked: u16 = 0;
+
+//     for (sp_inx, sp) in state.sps.iter().enumerate() {
+//         // if the pool is not busy, has stake
+//         let staked = as_u128(&sp["staked"]);
+//         let unstaked = as_u128(&sp["unstaked"]);
+//         let w = as_u32(&sp["weight_basis_points"]);
+//         let should_have = state.total_for_staking * w as u128 / 10_000;
+//         println!(r#""{{"sp":{},"event":"unstaked:{}, should_have:{}","amount":"{}"}}""#, 
+//             sp_inx,
+//             unstaked/NEAR,
+//             should_have/NEAR,
+//             staked
+//         );
+//         // count how how many sps are unblocked, i.e. can receive an unstake request
+//         if unstaked == 0 { count_unblocked += 1};
+//         if staked > 0 {
+//             //if has not unstaked balance waiting for withdrawal, or wait started in this same epoch (no harm in unstaking more)
+//             if unstaked == 0 || as_u128(&sp["unstaked_requested_epoch_height"]) == state.epoch as u128 {
+//                 // if this pool has an unbalance requiring un-staking
+//                 let should_have = apply_pct(w as u16, state.total_for_staking);
+//                 // does this pool requires un-staking? (has too much staked?)
+//                 if staked > should_have {
+//                     // how much?
+//                     let unstake_amount = staked - should_have;
+//                     // is this the most unbalanced pool so far?
+//                     if unstake_amount > selected_to_unstake_amount {
+//                         selected_to_unstake_amount = unstake_amount;
+//                         selected_sp_inx = sp_inx;
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     return (selected_sp_inx, selected_to_unstake_amount, count_unblocked);
+// }
+
+
+//-----------------
+pub fn bot_change_pools_weight(sim: &Simulation, start: &State) -> Result<StateAndDiff, String> {
+
+    let state = start.clone();
+
+    let metapool = &sim.metapool;
+
+    let mut rng = Pcg32::seed_from_u64(start.epoch as u64);
+
+    // change pools weight
+    let mut weights_bp:Vec<u16> = vec!(0,0,0,0);
+    for times in 0..=1000 {
+        let mut total:u16 = 0;
+        for n in 0..=2 {
+            let rand_w: u16 = rng.gen_range(0..4000) as u16;
+            weights_bp[n] = rand_w;
+            total += rand_w;
+        }
+        if total<9900 && total>5000 {
+            weights_bp[3] = 10000 - total;
+            set_staking_pools_weight(weights_bp, &sim);
+            let diff = state_diff(&start, &state);
+            return Ok(StateAndDiff {
+                state,
+                diff,
+                res: None,
+            });
         }
     }
+    panic!("no good random weights at bot_change_pools_weight")
 
-    if selected_to_unstake_amount > 0 {
-        if selected_to_unstake_amount > total_to_unstake {
-            selected_to_unstake_amount = total_to_unstake
-        };
-        //to avoid moving small amounts, if the remainder is less than 5K and this pool can accommodate the unstaking, increase amount
-        let remainder = total_to_unstake - selected_to_unstake_amount;
-        if remainder <= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
-            && selected_stake
-                > selected_to_unstake_amount + remainder + 2 * MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT
-        {
-            selected_to_unstake_amount += remainder
-        };
-    }
-    return (selected_sp_inx, selected_to_unstake_amount);
 }
 
 //-----------------
 pub fn bot_rebalance_unstake(sim: &Simulation, start: &State) -> Result<StateAndDiff, String> {
 
-    let mut state = start.clone();
+    // before rebalance_unstake, we do a bot_retrieve
+    // rebalance_unstake is done always afer retrieving, we must retrieve to free sp.unstaked
+    let mut state = bot_retrieve(&sim, &start)?.state.clone();
+
+    //let mut state = start.clone();
 
     let metapool = &sim.metapool;
 
-    // before END_OF_EPOCH: rebalance up to 10%
+    // before END_OF_EPOCH: rebalance up to 1%
+    let mut more_work = state.unstaked_for_rebalance < apply_pct(100, state.total_for_staking);
+    while more_work {
 
-    // check for max x% unstaked
-    const MAX_UNSTAKED_PCT:u8 = 10;
-    let max_allowed_unstaked_amount = state.total_for_staking * MAX_UNSTAKED_PCT as u128 / 100;
-
-    let unstake_rebalance_cap =
-        if state.total_unstaked_and_waiting > max_allowed_unstaked_amount {
-            0 // do not unstake more if we have x% unstaked already
-        }
-        else {
-            max_allowed_unstaked_amount - state.total_unstaked_and_waiting
-        };
-
-    if unstake_rebalance_cap > 2*MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT {
-        
-        // find aa pool with extra stake
-        let (inx, extra) = get_staking_pool_requiring_unstake(&state, unstake_rebalance_cap -  MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT);
-        
-        //println!("about to call start_rebalance_unstake on {}, extra={}", pool.to_string(), extra);
-        //let pool_id = pool["account_id"].as_str().unwrap().to_string();
+        //println!("about to call do_rebalance_unstake");
         let result = step_call(
             sim,
             &sim.operator,
-            "start_rebalance_unstake",
-            json!({ "sp_inx": inx, "amount": extra.to_string() }),
+            "do_rebalance_unstake",
+            json!({}),
             200 * TGAS,
             NO_DEPOSIT,
             &state,
         )?;
+
         state = result.state;
+        more_work = result.res.unwrap().unwrap_json();
+        println!("--result {}", more_work);
+        if let Err(err) = state.test_invariants() {
+            panic!("invariant check {}", err);
+            //return Err(err)
+        }
 
     }
-
 
     let diff = state_diff(&start, &state);
     return Ok(StateAndDiff {

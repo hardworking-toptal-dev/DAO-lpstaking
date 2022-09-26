@@ -41,8 +41,8 @@ pub const NUM_EPOCHS_TO_UNLOCK: EpochHeight = 4; //0 for testing in guild-net, 4
 /// The contract keeps at least 35 NEAR in the account to avoid being transferred out to cover
 /// contract code storage and some internal state.
 pub const MIN_BALANCE_FOR_STORAGE: u128 = 35_000_000_000_000_000_000_000_000;
-/// if the remainder falls below this amount, it's included in the current movement
-pub const MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT: u128 = 1 * K_NEAR;
+/// if the remainder falls below this amount, rebalance is not performed
+pub const MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT: u128 = TEN_NEAR;
 
 //cut on swap fees
 pub const DEFAULT_TREASURY_SWAP_CUT_BASIS_POINTS: u16 = 2500; // 25% swap fees go to Treasury
@@ -224,6 +224,8 @@ pub struct GetContractStateResult {
     pub max_meta_rewards_stakers: U128String, //stakers
     pub max_meta_rewards_lp: U128String,      //liquidity-providers
     pub max_meta_rewards_lu: U128String,      //liquid-unstakers
+
+    pub unstaked_for_rebalance: U128String,
 }
 
 /// Struct returned from get_contract_params
@@ -254,7 +256,9 @@ pub struct ContractParamsJSON {
     /// treasury_cut_basis_points.
     pub treasury_swap_cut_basis_points: u16,
     pub min_deposit_amount: U128String,
-    pub min_stake_unstake_amount_movement: U128String
+    pub min_stake_unstake_amount_movement: U128String,
+
+    pub unstake_for_rebalance_cap_bp: u16,
 }
 
 #[derive(Serialize)]
