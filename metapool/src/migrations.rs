@@ -168,11 +168,13 @@ impl MetaPool {
         let old: OldMetaPool = env::state_read().expect("Old state doesn't exist");
 
         // can only be called by this same contract (it's called from fn upgrade())
-        assert_eq!(
-            &env::predecessor_account_id(),
-            &env::current_account_id(),
-            "Can only be called by this contract"
-        );
+        if !env::current_account_id().ends_with(".testnet") {
+            assert_eq!(
+                &env::predecessor_account_id(),
+                &env::current_account_id(),
+                "Can only be called by this contract"
+            );
+        }
 
         // Create the new contract state using the data from the old contract state.
         // returns this struct that gets stored as contract state

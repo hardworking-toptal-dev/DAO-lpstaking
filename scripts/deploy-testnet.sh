@@ -2,7 +2,8 @@ set -e
 NETWORK=testnet
 OWNER=lucio.$NETWORK
 MASTER_ACC=pool.$NETWORK
-OPERATOR_ACC_SUFFIX=.meta.pool.testnet
+OPERATOR_ACC_SUFFIX=.meta.pool.$NETWORK
+OPERATOR_ACC=operator$OPERATOR_ACC_SUFFIX
 CONTRACT_ACC=meta-v2.$MASTER_ACC
 GOV_TOKEN=token.meta.$MASTER_ACC
 
@@ -14,7 +15,7 @@ export NEAR_ENV=$NETWORK
 #near delete $CONTRACT_ACC $MASTER_ACC
 #near create-account $CONTRACT_ACC --masterAccount $MASTER_ACC
 #meta deploy ./res/metapool.wasm
-#meta new { owner_account_id:$OWNER, treasury_account_id:treasury$OPERATOR_ACC_SUFFIX, operator_account_id:operator$OPERATOR_ACC_SUFFIX, meta_token_account_id:$GOV_TOKEN } --accountId $MASTER_ACC
+#meta new { owner_account_id:$OWNER, treasury_account_id:treasury$OPERATOR_ACC_SUFFIX, operator_account_id:OPERATOR_ACC, meta_token_account_id:$GOV_TOKEN } --accountId $MASTER_ACC
 ## set params@meta set_params
 #meta set_params
 ## deafult 4 pools
@@ -26,8 +27,8 @@ export NEAR_ENV=$NETWORK
 # ## redeploy code only
 echo $NETWORK, $CONTRACT_ACC
 near deploy $CONTRACT_ACC ./res/metapool.wasm  --accountId $MASTER_ACC --networkId $NETWORK
-# ## MIGRATE
-#near call $CONTRACT_ACC migrate "{}" --accountId $CONTRACT_ACC
+# ## MIGRATE ##
+near call $CONTRACT_ACC migrate "{}" --accountId $OPERATOR_ACC
 
 #near deploy contract4.preprod-pool.testnet ./res/metapool.wasm  --accountId preprod-pool.testnet
 #near call contract4.preprod-pool.testnet set_busy "{\"value\":false}" --accountId preprod-pool.testnet --depositYocto 1
