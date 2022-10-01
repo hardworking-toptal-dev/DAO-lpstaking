@@ -374,6 +374,14 @@ impl MetaPool {
         self.internal_withdraw_use_unstaked(account.unstaked)
     }
 
+    /// user method - simplified flow
+    /// completes delayed-unstake action by transferring from retrieved_from_the_pools to user's NEAR account
+    /// equivalent to core-contracts/staking-pool.withdraw_all, used by metastaking webapp
+    pub fn withdraw_unstaked(&mut self) -> Promise {
+        let account = self.internal_get_account(&env::predecessor_account_id());
+        self.internal_withdraw_use_unstaked(account.unstaked)
+    }
+
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
     pub fn deposit_and_stake(&mut self) {
