@@ -86,7 +86,7 @@ impl MetaPool {
     pub fn add_staking_pool(&mut self, account_id: AccountId) {
         self.assert_operator_or_owner();
         assert!(
-            account_id.ends_with(".poolv1.near") || account_id.ends_with(".testnet"),
+            account_id.ends_with(".poolv1.near") || account_id.ends_with(".pool.f863973.m0") || account_id.ends_with(".testnet"),
             "invalid staking-pool contract account {}", account_id);
         // search the pools
         for sp_inx in 0..self.staking_pools.len() {

@@ -238,6 +238,9 @@ impl MetaPool {
 
             unstaked_for_rebalance: 0, // ***************** CHANGE, TAKE FROM OLD 
             unstake_for_rebalance_cap_bp: 100, // ***************** CHANGE, TAKE FROM OLD
+
+            //unstaked_for_rebalance: old.unstaked_for_rebalance, // ***************** CHANGE, TAKE FROM OLD 
+            //unstake_for_rebalance_cap_bp: old.unstake_for_rebalance_cap_bp, // ***************** CHANGE, TAKE FROM OLD
         };
     }
 }

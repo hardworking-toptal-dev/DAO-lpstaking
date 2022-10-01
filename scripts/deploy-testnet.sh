@@ -28,7 +28,9 @@ export NEAR_ENV=$NETWORK
 echo $NETWORK, $CONTRACT_ACC
 near deploy $CONTRACT_ACC ./res/metapool.wasm  --accountId $MASTER_ACC --networkId $NETWORK
 # ## MIGRATE ##
+echo --TRY MIGRATE--
 near call $CONTRACT_ACC migrate "{}" --accountId $OPERATOR_ACC
+echo --END TRY MIGRATE, CAN FAIL ON 2dN DEPLOY IF YOU FORGET TO CHANGE OLD_STATE, BUT THAT IS NO PROBLEM --
 
 #near deploy contract4.preprod-pool.testnet ./res/metapool.wasm  --accountId preprod-pool.testnet
 #near call contract4.preprod-pool.testnet set_busy "{\"value\":false}" --accountId preprod-pool.testnet --depositYocto 1
