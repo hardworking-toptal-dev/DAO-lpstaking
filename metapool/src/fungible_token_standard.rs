@@ -179,6 +179,7 @@ impl FungibleTokenMetadataProvider for MetaPool {
 #[near_bindgen]
 impl MetaPool {
     pub fn ft_metadata_set(&self, data: FungibleTokenMetadata) {
+        self.assert_owner_calling();
         let mut metadata = ft_metadata_init_lazy_container();
         metadata.set(&data); //save into storage
     }
