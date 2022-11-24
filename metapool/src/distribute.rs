@@ -52,7 +52,7 @@ impl MetaPool {
             return false;
         }
         // find pool
-        // the resulting "amount_to_stake" could be less than total_amount_to_stake, if the found pool dos neet that much
+        // the resulting "amount_to_stake" could be less than total_amount_to_stake, if the pool does not need that much
         let (sp_inx, stake_required) = self.get_staking_pool_requiring_stake();
         log!(
             "total_amount_to_stake:{} get_staking_pool_requiring_stake=>{},{}",
