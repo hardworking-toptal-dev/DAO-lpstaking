@@ -285,17 +285,16 @@ impl MetaPool {
             
                 let gspru = self.internal_get_staking_pool_requiring_unstake();
                 debug!(
-                    r#"{{"sp_inx":{},"event":"do_rebal_usntk extra:{} totExtra:{}","unblocked":{},"with_stake":{}}}"#,
-                    gspru.sp_inx, gspru.extra/NEAR, gspru.total_extra/NEAR, gspru.count_unblocked, gspru.count_with_stake
+                    r#"{{"event":"do_rebal_usntk", "extra":{}, "sp_inx":{}, "totExtra":{}, "unblocked":{}, "with_stake":{}}}"#,
+                    gspru.extra/NEAR, gspru.sp_inx, gspru.total_extra/NEAR, gspru.count_unblocked, gspru.count_with_stake
                 );
                 // continue only if at least 40% of the pools with stake are "unblocked", i.e. not already waiting for unstake-period and so ready for more unstakes.
                 // and if amount left for rebalance (total_extra) is more than already unstaked_for_rebalance
-                // and if what's left (total_extra - state.unstaked_for_rebalance) is at least 0.05% of TFS (if there's some unbalance worth solving)
+                // and if selected sp assigned=0 OR what's to rebalance is at least 0.05% of TFS (if there's some unbalance worth solving)
                 if gspru.count_unblocked as u64 >= gspru.count_with_stake as u64 * 40 / 100 && 
-                    gspru.total_extra > self.unstaked_for_rebalance &&
-                    gspru.total_extra - self.unstaked_for_rebalance > self.total_for_staking / 2000 
+                    ( self.staking_pools[gspru.sp_inx as usize].weight_basis_points == 0 || 
+                        gspru.total_extra - self.unstaked_for_rebalance > self.total_for_staking / 2000 )
                 {
-                    
                     let to_unstake_for_rebal = std::cmp::min(gspru.extra, unstake_rebalance_left);
                     // Next call affects:
                     // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting, 
@@ -468,6 +467,7 @@ impl MetaPool {
     pub fn set_busy(&mut self, value: bool) {
         assert_one_yocto();
         self.assert_operator_or_owner();
+        assert!(self.contract_busy != value,"contract_busy is already {}",value);
         self.contract_busy = value;
     }
     //operator manual set sp.busy_lock
@@ -480,6 +480,7 @@ impl MetaPool {
         assert!(inx < self.staking_pools.len());
 
         let sp = &mut self.staking_pools[inx];
+        assert!(sp.busy_lock != value,"sp[{}].busy_lock is already {}",inx,value);
         sp.busy_lock = value;
     }
 

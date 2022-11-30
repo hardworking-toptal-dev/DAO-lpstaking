@@ -252,7 +252,7 @@ pub struct MetaPool {
     pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
     /// when some unstake for rebalance is executed, this amountis increased 
     /// when some extra is retrieved or recovered in EOE clearing, it is decremented
-    /// represents the amount that's not stake because is in transit for rebalance. 
+    /// represents the amount that's not staked because is in transit for rebalance. 
     /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
     pub unstaked_for_rebalance: u128,
 }
