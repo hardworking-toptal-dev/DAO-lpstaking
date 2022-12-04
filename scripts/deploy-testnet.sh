@@ -24,6 +24,11 @@ export NEAR_ENV=$NETWORK
 ## test
 #near call $CONTRACT_ACC set_busy "{\"value\":false}" --accountId $CONTRACT_ACC --depositYocto 1
 
+# set contract busy to make sure we're not upgrading in the middle of a cross-contract call
+set -ex
+near call $CONTRACT_ACC set_busy '{"value":true}' --accountId $OPERATOR_ACC --depositYocto 1
+set -e
+
 # ## redeploy code only
 echo $NETWORK, $CONTRACT_ACC
 near deploy $CONTRACT_ACC ./res/metapool.wasm  --accountId $MASTER_ACC --networkId $NETWORK
@@ -31,6 +36,8 @@ near deploy $CONTRACT_ACC ./res/metapool.wasm  --accountId $MASTER_ACC --network
 echo --TRY MIGRATE--
 near call $CONTRACT_ACC migrate "{}" --accountId $OPERATOR_ACC
 echo --END TRY MIGRATE, CAN FAIL ON 2dN DEPLOY IF YOU FORGET TO CHANGE OLD_STATE, BUT THAT IS NO PROBLEM --
+
+near call $CONTRACT_ACC set_busy '{"value":false}' --accountId $OPERATOR_ACC --depositYocto 1
 
 #near deploy contract4.preprod-pool.testnet ./res/metapool.wasm  --accountId preprod-pool.testnet
 #near call contract4.preprod-pool.testnet set_busy "{\"value\":false}" --accountId preprod-pool.testnet --depositYocto 1
