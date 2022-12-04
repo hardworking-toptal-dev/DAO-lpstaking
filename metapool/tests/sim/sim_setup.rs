@@ -95,7 +95,9 @@ pub fn init_simulator_and_contract(
   return (metapool_contract, master_account, testnet, owner, treasury, operator)
 }
 */
-
+fn sp_contract_name(n:usize) -> String {
+    format!("sp{}.testnet", n)
+}
 //-----------------------
 fn deploy_simulated_staking_pool(
     master_account: &UserAccount,
@@ -187,9 +189,9 @@ impl Simulation {
         let mut pools:Vec<StakingPoolArgItem> = Vec::with_capacity(4);
         //----
         for n in 0..=3 {
-            let acc_id = &format!("sp{}.testnet", n);
+            let acc_id = sp_contract_name(n);
             let sp_contract =
-                deploy_simulated_staking_pool(&testnet, acc_id, &owner.account_id());
+                deploy_simulated_staking_pool(&testnet, &acc_id[..], &owner.account_id());
             //call(&owner,&sp_contract,"pause_staking","{}",0,10*TGAS);
             sp.push(sp_contract);
             //-- register the staking pool in metapool
@@ -215,6 +217,40 @@ impl Simulation {
         );
         print_exec_result(&res);
         check_exec_result(&res);
+
+        // test contract checks
+        // should fail because sum(bp)!=10000
+        {
+            let mut invalid_pools:Vec<StakingPoolArgItem> = Vec::with_capacity(4);
+            let weights_vec: Vec<u8> = vec![14, 40, 25, 20];
+            for n in 0..=3 {
+                // prepare weight
+                let weight_bp = weights_vec[n] as u16 * 100;
+                invalid_pools.push ( StakingPoolArgItem {
+                    account_id: sp_contract_name(n),
+                    weight_basis_points: weight_bp
+                });
+            }
+            let res=call!(
+                owner,
+                metapool.set_staking_pools(invalid_pools),
+                1,
+                125 * TGAS
+            );
+            // should fail
+            assert!(!res.is_ok(),"expected sum(bp)!=10000 check to be triggered");
+        }
+        // test add duplicated sp
+        // should fail because already exists
+        {
+            let res = call!(
+                owner,
+                metapool.add_staking_pool(sp_contract_name(1)),
+                gas = 25 * TGAS
+            );
+            // should fail
+            assert!(!res.is_ok(),"expected sum(bp)!=10000 check to be triggered");
+        }
 
         //deploy a contract to get the current epoch
         let get_epoch_acc = master_account.deploy(
