@@ -10,6 +10,7 @@ const CONTRACT_NAME: &str = "Metapool";
 const CONTRACT_VERSION: &str = "2.0.0";
 const DEFAULT_WEB_APP_URL: &str = "https://metapool.app";
 const DEFAULT_AUDITOR_ACCOUNT_ID: &str = "auditors.near";
+const SOURCE_URL: &str = "github.com/Meta-Pool/liquid-staking-contract";
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};

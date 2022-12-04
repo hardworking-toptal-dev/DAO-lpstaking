@@ -223,7 +223,7 @@ impl MetaPool {
             treasury_swap_cut_basis_points: old.treasury_swap_cut_basis_points,
 
             // Configurable info for [NEP-129](https://github.com/nearprotocol/NEPs/pull/129)
-            web_app_url: old.web_app_url,
+            web_app_url: Some(String::from(DEFAULT_WEB_APP_URL)),  // ***************** CHANGE, TAKE FROM OLD 
             auditor_account_id: old.auditor_account_id,
 
             meta_token_account_id: old.meta_token_account_id,
