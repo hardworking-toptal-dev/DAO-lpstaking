@@ -90,13 +90,11 @@ impl MetaPool {
                 || account_id.ends_with(".pool.f863973.m0") 
                 || account_id.ends_with(".testnet"),
             "invalid staking-pool contract account {}", account_id);
-        // search the pools
-        for sp_inx in 0..self.staking_pools.len() {
-            if self.staking_pools[sp_inx].account_id == account_id {
-                // found
-                panic!("already in list");
-            }
-        }
+        // assert that is not already in the list
+        assert!(
+            self.staking_pools.iter().find(|x| x.account_id==account_id).is_none(),
+            "already in the list"
+        );
         // not in list, add
         self.staking_pools
             .push(StakingPoolInfo::new(account_id, 0));
@@ -241,7 +239,7 @@ impl MetaPool {
             dataVersion: 1,
             name: CONTRACT_NAME.into(),
             version: CONTRACT_VERSION.into(),
-            source: "https://github.com/Narwallets/meta-pool".into(),
+            source: SOURCE_URL.into(),
             standards: vec!["NEP-141".into(), "NEP-145".into(), "SP".into()], //SP=>core-contracts/Staking-pool
             webAppUrl: self.web_app_url.clone(),
             developersAccountId: DEVELOPERS_ACCOUNT_ID.into(),
