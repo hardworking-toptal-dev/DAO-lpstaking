@@ -4,11 +4,10 @@ use near_contract_standards::fungible_token::{
     resolver::FungibleTokenResolver,
 };
 
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LazyOption;
 use near_sdk::json_types::{ValidAccountId, U128};
 use near_sdk::{
-    env, near_bindgen, AccountId, Balance, Gas, PanicOnDefault, PromiseOrValue, StorageUsage,
+    env, near_bindgen, AccountId, Balance, Gas, PromiseOrValue
 };
 
 use crate::*;
@@ -58,18 +57,6 @@ fn ft_metadata_init_lazy_container() -> LazyOption<FungibleTokenMetadata> {
 }
 
 #[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-pub struct Contract {
-    metadata: LazyOption<FungibleTokenMetadata>,
-
-    pub accounts: LookupMap<AccountId, Balance>,
-    pub total_supply: Balance,
-    // TODO: rename
-    /// The storage size in bytes for one account.
-    pub account_storage_usage: StorageUsage,
-}
-
-#[near_bindgen]
 impl FungibleTokenCore for MetaPool {
     //NEP-141 for default token STNEAR, ft_transfer
     /// Transfer `amount` of tokens from the caller of the contract (`predecessor_id`) to a contract at `receiver_id`.
@@ -84,11 +71,14 @@ impl FungibleTokenCore for MetaPool {
         #[allow(unused)] memo: Option<String>,
     ) {
         assert_one_yocto();
+        //log!("env::storage_byte_cost {}",env::storage_byte_cost());
+        //log!("env::storage_usage {}",env::storage_usage());
         self.internal_st_near_transfer(
             &env::predecessor_account_id(),
             &receiver_id.into(),
             amount.0,
         );
+        //log!("env::storage_usage {}",env::storage_usage());
     }
 
     #[payable]

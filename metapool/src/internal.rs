@@ -148,7 +148,7 @@ impl MetaPool {
     }
 
     //------------------------------
-    /// delayed_usntake, amount_requested is in yoctoNEARs
+    /// delayed_unstake, amount_requested is in yoctoNEARs
     pub(crate) fn internal_unstake(&mut self, amount_requested: u128) {
         self.assert_not_busy();
 
@@ -160,7 +160,7 @@ impl MetaPool {
         let amount_to_unstake: u128;
         let stake_shares_to_burn: u128;
         // if the amount is close to user's total, remove user's total
-        // to: a) do not leave less than ONE_MILLI_NEAR in the account, b) Allow 10 yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
+        // to: a) do not leave less than 1/1000 NEAR in the account, b) Allow 10 yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
         if is_close(amount_requested, valued_shares) {
             // allow for rounding simplification
             amount_to_unstake = valued_shares;
@@ -439,14 +439,13 @@ impl MetaPool {
         self.accounts.get(account_id).unwrap_or_default()
     }
 
+    pub(crate) fn account_exists(&self, account_id: &String) -> bool {
+        self.accounts.get(account_id).is_some()
+    }
+    
     /// Inner method to save the given account for a given account ID.
-    /// If the account balances are 0, the account is deleted instead to release storage.
     pub(crate) fn internal_update_account(&mut self, account_id: &String, account: &Account) {
-        if account.is_empty() {
-            self.accounts.remove(account_id);
-        } else {
-            self.accounts.insert(account_id, &account); //insert_or_update
-        }
+        self.accounts.insert(account_id, &account); //insert_or_update
     }
 
     /// Inner method to get the given account or a new default value account.
@@ -520,7 +519,7 @@ impl MetaPool {
                 // NOTE: Unstaking in the same epoch is only an issue, if you hit the last block of the epoch.
                 //       In this case the receipt may be executed at the next epoch.
                 // NOTE2: core-contracts/staking-pool is imprecise when unstaking, some times 1 to 10 yoctos remain in "unstaked"
-                //        The bot should sincronize unstaked yoctos before calling this function.
+                //        The bot should synchronize unstaked yoctos before calling this function.
                 // We assume that if sp.unstaked>100 yoctos, a new unstake will cause that amount to be blocked
                 if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE || sp.unstk_req_epoch_height == env::epoch_height() {
                     // does this pool requires un-staking? (has too much staked?)
