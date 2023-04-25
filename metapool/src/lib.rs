@@ -120,7 +120,7 @@ pub struct MetaPool {
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
     /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other
-    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstkae claims
+    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstake claims
     /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
     /// This amount decrements at user's delayed-unstake-withdraw, when sending the NEAR to the user
     /// Related variables and Invariant:
@@ -145,7 +145,7 @@ pub struct MetaPool {
     /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_stake_orders: u128,
-    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake migth be done before EOE
+    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake might be done before EOE
     /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
@@ -251,7 +251,7 @@ pub struct MetaPool {
 
     /// up to 1% of the total pool can be unstaked for rebalance (no more than 1% to not affect APY)
     pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
-    /// when some unstake for rebalance is executed, this amountis increased 
+    /// when some unstake for rebalance is executed, this amount is increased 
     /// when some extra is retrieved or recovered in EOE clearing, it is decremented
     /// represents the amount that's not staked because is in transit for rebalance. 
     /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
@@ -386,12 +386,12 @@ impl MetaPool {
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
     pub fn deposit_and_stake(&mut self) {
-        self.internal_deposit();
-        self.internal_stake_from_account(env::predecessor_account_id(), env::attached_deposit());
+        let amount = self.internal_deposit();
+        self.internal_stake_from_account(env::predecessor_account_id(), amount);
         //----------
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
-        // the amount just deposited, migth be swapped in the liquid-unstake pool
-        self.nslp_try_internal_clearing(env::attached_deposit());
+        // the amount just deposited, might be swapped in the liquid-unstake pool
+        self.nslp_try_internal_clearing(amount);
     }
 
     /// Stakes all "unstaked" balance from the inner account of the predecessor.
@@ -443,7 +443,7 @@ impl MetaPool {
 
     /// Returns the total balance of the given account (including staked and unstaked balances).
     pub fn get_account_total_balance(&self, account_id: AccountId) -> U128String {
-        let acc = self.internal_get_account(&account_id);
+        let acc = self.accounts.get(&account_id).unwrap_or_default();
         return (acc.available + self.amount_from_stake_shares(acc.stake_shares) + acc.unstaked)
             .into();
     }
@@ -451,7 +451,7 @@ impl MetaPool {
     /// additional to staking-pool to satisfy generic deposit-NEP-standard
     /// returns the amount that can be withdrawn immediately
     pub fn get_account_available_balance(&self, account_id: AccountId) -> U128String {
-        let acc = self.internal_get_account(&account_id);
+        let acc = self.accounts.get(&account_id).unwrap_or_default();
         return acc.available.into();
     }
 
@@ -505,7 +505,7 @@ impl MetaPool {
     /// Returns human readable representation of the account for the given account ID.
     //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
     pub fn get_account(&self, account_id: AccountId) -> HumanReadableAccount {
-        let account = self.internal_get_account(&account_id);
+        let account = self.accounts.get(&account_id).unwrap_or_default();
         return HumanReadableAccount {
             account_id,
             unstaked_balance: account.unstaked.into(),
@@ -770,8 +770,8 @@ impl MetaPool {
     pub fn nslp_add_liquidity(&mut self) -> u16 {
         // TODO: Since this method doesn't guard the resulting liquidity, is it possible to put it
         //    into a front-run/end-run sandwich to capitalize on the transaction?
-        self.internal_deposit();
-        return self.internal_nslp_add_liquidity(env::attached_deposit());
+        let amount = self.internal_deposit();
+        return self.internal_nslp_add_liquidity(amount);
     }
 
     /// remove liquidity from liquidity pool
@@ -863,7 +863,7 @@ impl MetaPool {
 
     //----------------------------------
     // Use part of the NSLP to stake. This is the inverse operation of nslp_try_internal_clearing
-    // can be used by the operator to increase ecpoch_stake_orders 
+    // can be used by the operator to increase epoch_stake_orders 
     // to later direct stake in validators that are about to lose the seat
     // ---------------------------------
     #[payable]
@@ -907,7 +907,7 @@ impl MetaPool {
     }
 
     pub fn realize_meta(&mut self, account_id: String) {
-        // this fn shoudl not be called for the NSLP_INTERNAL_ACCOUNT
+        // this fn should not be called for the NSLP_INTERNAL_ACCOUNT
         assert!(account_id!=NSLP_INTERNAL_ACCOUNT);
 
         let mut acc = self.internal_get_account(&account_id);

@@ -178,7 +178,7 @@ impl MetaPool {
     /// full account info
     /// Returns JSON representation of the account for the given account ID.
     pub fn get_account_info(&self, account_id: AccountId) -> GetAccountInfoResult {
-        let acc = self.internal_get_account(&account_id);
+        let acc = self.accounts.get(&account_id).unwrap_or_default();
         let staked_near = self.amount_from_stake_shares(acc.stake_shares);
         // trip_rewards = current_stnear + trip_accum_unstakes - trip_accum_stakes - trip_start_stnear;
         // note: trip_start_stnear is OBSOLETE

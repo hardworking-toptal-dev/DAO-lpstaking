@@ -8,7 +8,7 @@ use crate::*;
 // Storage Management
 // storage is 384 bytes per account, at price = 1 NEAR/100Kib => 0.00384 NEAR per account 
 // --------------------------------------------------------------------------
-const STORAGE_COST_YOCTOS: u128 = ONE_NEAR / 100_000 * 384;
+pub const STORAGE_COST_YOCTOS: u128 = ONE_NEAR / 100_000 * 384;
 // storage is fixed, if the account is registered, STORAGE_COST_YOCTOS was received, 
 // when the account is unregistered, STORAGE_COST_YOCTOS are returned 
 
@@ -24,8 +24,16 @@ impl MetaPool {
     ) -> StorageBalance {
         // get account_id
         let account_id:String = if account_id.is_some() {account_id.unwrap().into()} else {env::predecessor_account_id()};
-        // if already exists, no more yoctos required
-        let required = if self.account_exists(&account_id) {0} else {STORAGE_COST_YOCTOS};
+        let opt_account = self.accounts.get(&account_id);
+        // if account already exists, no more yoctos required
+        let required = if opt_account.is_some() {
+            0
+        } 
+        else {
+            // create empty account, require the yoctos
+            self.accounts.insert(&account_id, &Account::default());
+            STORAGE_COST_YOCTOS
+        };
         assert!(env::attached_deposit() >= required, "not enough attached for storage");
         // if user sent more than required, return it, keep only required
         if env::attached_deposit() > required {
