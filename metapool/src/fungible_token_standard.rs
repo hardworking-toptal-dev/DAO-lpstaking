@@ -130,8 +130,12 @@ impl FungibleTokenCore for MetaPool {
     }
 
     fn ft_balance_of(&self, account_id: ValidAccountId) -> U128 {
-        let acc = self.internal_get_account(&account_id.into());
-        return acc.stake_shares.into();
+        if let Some(acc) = self.accounts.get(&account_id.into()) {
+            acc.stake_shares.into()
+        }
+        else {
+            0.into()
+        }
     }
 }
 
