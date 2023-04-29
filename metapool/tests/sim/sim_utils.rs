@@ -63,21 +63,30 @@ pub fn check_exec_result_single(res: &ExecutionResult) {
     for line in &res.outcome().logs {
         println!("{:?}", line);
     }
+    //println!("executor_id {} gas burnt {} tokens_burnt {}", res.executor_id(), res.gas_burnt(), res.tokens_burnt());
     if !res.is_ok() {
         println!("{:?}", res);
     }
     assert!(res.is_ok());
 }
 
-pub fn check_exec_result(res: &ExecutionResult) {
-    check_exec_result_single(res);
-    for pr in &res.promise_results() {
+pub fn check_exec_result(res: &ExecutionResult) -> u128 {
+    // println!("-----------------");
+    // check_exec_result_single(res); -- main receipt is in promises too
+    // let mut total_tokens_burnt = res.tokens_burnt();
+    let mut total_tokens_burnt = 0;
+    println!("------------ promises");
+    for pr in res.promise_results() {
         if let Some(some_pr) = pr {
             check_exec_result_single(&some_pr);
+            total_tokens_burnt += some_pr.tokens_burnt();
         }
     }
+    println!("------------end promises");
     assert!(res.is_ok());
+    total_tokens_burnt
 }
+
 
 /// Helper to log ExecutionResult outcome of a call/view
 // fn check_exec_result_profile(res: &ExecutionResult) {
