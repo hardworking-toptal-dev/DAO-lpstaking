@@ -101,7 +101,7 @@ pub trait MetaToken {
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct MetaPool {
-    /// Owner's account ID (it will be a DAO on phase II)
+    /// Owner's account ID (DAO)
     pub owner_account_id: AccountId,
 
     /// Avoid re-entry when async-calls are in-flight

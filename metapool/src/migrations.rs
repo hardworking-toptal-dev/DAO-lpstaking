@@ -15,7 +15,7 @@ use crate::*;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct OldMetaPool {
-    /// Owner's account ID (it will be a DAO on phase II)
+    /// Owner's account ID (DAO)
     pub owner_account_id: AccountId,
 
     /// Avoid re-entry when async-calls are in-flight
@@ -33,25 +33,35 @@ pub struct OldMetaPool {
     /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim that will
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
-    /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other.
-    /// This amount also increments at retrieve_from_staking_pool
-    /// The funds here are *reserved* fro the unstake-claims and can only be user to fulfill those claims
-    /// This amount decrements at unstake-withdraw, sending the NEAR to the user
-    /// Note: There's a extra functionality (quick-exit) that can speed-up unstaking claims if there's funds in this amount.
-    pub reserve_for_unstake_claims: u128,
+    /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other
+    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstkae claims
+    /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
+    /// This amount decrements at user's delayed-unstake-withdraw, when sending the NEAR to the user
+    /// Related variables and Invariant:
+    /// retrieved_for_unstake_claims = NEAR in the contract, retrieved in prev epochs (or result of clearing)
+    /// unstaked_and_waiting = delay-unstaked in prev epochs, waiting, will become reserve
+    /// epoch_unstake_orders = delay-unstaked in this epoch, may remain in the contract or start unstaking before EOE
+    /// Invariant: retrieved_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
+    /// IF the sum is > (not ==), then it is implied that a rebalance is in progress, and the extra amount should be restaked
+    /// NOTE: use always fn self.consider_retrieved_for_unstake_claims(amount) to increase this accumulator
+    pub retrieved_for_unstake_claims: u128,
 
     /// This value is equivalent to sum(accounts.available)
     /// This amount increments with user's deposits_into_available and decrements when users stake_from_available
     /// increments with unstake_to_available and decrements with withdraw_from_available
     /// Note: in the current simplified UI user-flow of the meta-pool, only the NSLP & the treasury can have available balance
-    /// the rest of the users mov directly between their NEAR native accounts & the contract accounts, only briefly occupying acc.available
+    /// the rest of the users move directly between their NEAR native accounts & the contract accounts, only briefly occupying acc.available
     pub total_available: u128,
 
     //-- ORDERS
     // this two amounts can cancel each other at end_of_epoch_clearing
-    /// The total amount of "stake" orders in the current epoch
+    /// The total amount of "stake" orders in the current epoch, stNEAR has been minted, NEAR is in the contract, stake might be done before EOE
+    /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch), 
+    /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_stake_orders: u128,
-    /// The total amount of "delayed-unstake" orders in the current epoch
+    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake migth be done before EOE
+    /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
+    /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
     /// Not used
     pub epoch_last_clearing: EpochHeight,
@@ -73,15 +83,22 @@ pub struct OldMetaPool {
     // when someone "unstakes" they "burns" X shares at current price to recoup Y near
     pub total_stake_shares: u128, //total stNEAR minted
 
-    /// META is the governance token. Total meta minted
+    /// META is the governance token. Total meta minted by this contract
     pub total_meta: u128,
 
     /// The total amount of tokens actually unstaked and in the waiting-delay (the tokens are in the staking pools)
+    /// equivalent to sum(sp.unstaked)
     pub total_unstaked_and_waiting: u128,
 
-    /// sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
-    /// when the funds are withdrawn the amount is decremented.
-    /// Control: total_unstaked_claims == reserve_for_unstaked_claims + total_unstaked_and_waiting
+    /// Every time a user performs a delayed-unstake, stNEAR tokens are burned and the user gets a unstaked_claim 
+    /// equal to sum(accounts.unstake). Every time a user delayed-unstakes, this amount is incremented
+    /// when the funds are withdrawn to the user account, the amount is decremented.
+    /// Related variables and Invariant:
+    /// retrieved_for_unstake_claims = NEAR in the contract, retrieved in prev epochs (or result of clearing)
+    /// unstaked_and_waiting = delay-unstaked in prev epochs, waiting, will become reserve
+    /// epoch_unstake_orders = delay-unstaked in this epoch, may remain in the contract or start unstaking before EOE
+    /// Invariant: retrieved_for_unstake_claims + unstaked_and_waiting + epoch_unstake_orders must be >= total_unstake_claims
+    /// IF the sum is > (not ==), then it is implied that a rebalance is in progress, and the extra amount should be restaked
     pub total_unstake_claims: u128,
 
     /// the staking pools will add rewards to the staked amount on each epoch
@@ -145,6 +162,14 @@ pub struct OldMetaPool {
     pub max_meta_rewards_stakers: u128,
     pub max_meta_rewards_lu: u128, //liquid-unstakers
     pub max_meta_rewards_lp: u128, //liquidity-providers
+
+    /// up to 1% of the total pool can be unstaked for rebalance (no more than 1% to not affect APY)
+    pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
+    /// when some unstake for rebalance is executed, this amountis increased 
+    /// when some extra is retrieved or recovered in EOE clearing, it is decremented
+    /// represents the amount that's not staked because is in transit for rebalance. 
+    /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
+    pub unstaked_for_rebalance: u128,
 }
 
 use crate::MetaPool;
@@ -183,7 +208,7 @@ impl MetaPool {
             contract_busy: false,
             staking_paused: old.staking_paused,
             contract_account_balance: old.contract_account_balance,
-            retrieved_for_unstake_claims: old.reserve_for_unstake_claims,
+            retrieved_for_unstake_claims: old.retrieved_for_unstake_claims,
             total_available: old.total_available,
 
             //-- ORDERS
@@ -223,7 +248,7 @@ impl MetaPool {
             treasury_swap_cut_basis_points: old.treasury_swap_cut_basis_points,
 
             // Configurable info for [NEP-129](https://github.com/nearprotocol/NEPs/pull/129)
-            web_app_url: Some(String::from(DEFAULT_WEB_APP_URL)),  // ***************** CHANGE, TAKE FROM OLD 
+            web_app_url: old.web_app_url,
             auditor_account_id: old.auditor_account_id,
 
             meta_token_account_id: old.meta_token_account_id,
@@ -236,11 +261,8 @@ impl MetaPool {
             max_meta_rewards_lu: old.max_meta_rewards_lu,
             max_meta_rewards_lp: old.max_meta_rewards_lp,
 
-            unstaked_for_rebalance: 0, // ***************** CHANGE, TAKE FROM OLD 
-            unstake_for_rebalance_cap_bp: 100, // ***************** CHANGE, TAKE FROM OLD
-
-            //unstaked_for_rebalance: old.unstaked_for_rebalance, // ***************** CHANGE, TAKE FROM OLD 
-            //unstake_for_rebalance_cap_bp: old.unstake_for_rebalance_cap_bp, // ***************** CHANGE, TAKE FROM OLD
+            unstaked_for_rebalance: old.unstaked_for_rebalance, 
+            unstake_for_rebalance_cap_bp: old.unstake_for_rebalance_cap_bp,
         };
     }
 }
