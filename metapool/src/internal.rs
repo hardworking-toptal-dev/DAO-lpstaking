@@ -303,10 +303,13 @@ impl MetaPool {
 
     //--------------------------------
     // fees are extracted by minting a small amount of extra stNEAR
-    // used only for operator & DEVELOPERS_ACCOUNT
+    // this fn MUST NOT PANIC (is called from a callback clearing busy flags)
     pub(crate) fn add_extra_minted_shares(&mut self, account_id: AccountId, num_shares: u128) {
         if num_shares > 0 {
-            let account = &mut self.internal_get_account(&account_id);
+            // used only for operator & DEVELOPERS_ACCOUNT
+            // use accounts.unwrap_or_default to not panic and also
+            // create account if needed (for tests and first usage after init)
+            let account = &mut self.accounts.get(&account_id).unwrap_or_default();
             account.stake_shares += num_shares;
             self.internal_update_account(&account_id, &account);
             // Increasing the total amount of stake shares (reduces price)
@@ -683,8 +686,8 @@ impl MetaPool {
             PromiseResult::Failed => amount,
         };
 
-        if unused_amount > 0 {
-            let mut receiver_acc = self.internal_get_account(&receiver_id);
+        if unused_amount > 0 {            
+            let mut receiver_acc = self.accounts.get(&receiver_id).unwrap_or_default(); // avoid panics
             let receiver_balance = receiver_acc.stake_shares;
             if receiver_balance > 0 {
                 let refund_amount = std::cmp::min(receiver_balance, unused_amount);
@@ -692,7 +695,7 @@ impl MetaPool {
                 receiver_acc.sub_stake_shares(refund_amount, near_amount);
                 self.internal_update_account(&receiver_id, &receiver_acc);
 
-                let mut sender_acc = self.internal_get_account(&sender_id);
+                let mut sender_acc = self.accounts.get(&sender_id).unwrap_or_default(); // avoid panics
                 sender_acc.add_stake_shares(refund_amount, near_amount);
                 self.internal_update_account(&sender_id, &sender_acc);
 

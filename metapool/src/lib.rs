@@ -429,7 +429,7 @@ impl MetaPool {
 
     /// Returns the unstaked balance of the given account.
     pub fn get_account_unstaked_balance(&self, account_id: AccountId) -> U128String {
-        //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+        // note: get_account returns HumanReadableAccount - ok for unregistered accounts
         return self.get_account(account_id).unstaked_balance;
     }
 
@@ -437,7 +437,7 @@ impl MetaPool {
     /// NOTE: This is computed from the amount of "stake" shares the given account has and the
     /// current amount of total staked balance and total stake shares on the account.
     pub fn get_account_staked_balance(&self, account_id: AccountId) -> U128String {
-        //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+        // note: get_account returns HumanReadableAccount - ok for unregistered accounts
         return self.get_account(account_id).staked_balance;
     }
 
@@ -457,7 +457,7 @@ impl MetaPool {
 
     /// Returns `true` if the given account can withdraw tokens in the current epoch.
     pub fn is_account_unstaked_balance_available(&self, account_id: AccountId) -> bool {
-        //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+        // note: get_account returns HumanReadableAccount - ok for unregistered accounts
         return self.get_account(account_id).can_withdraw;
     }
 
@@ -503,7 +503,7 @@ impl MetaPool {
     /// to implement the Staking-pool interface, get_account returns the same as the staking-pool returns
     /// full account info can be obtained by calling: pub fn get_account_info(&self, account_id: AccountId) -> GetAccountInfoResult
     /// Returns human readable representation of the account for the given account ID.
-    //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+    // note: get_account returns HumanReadableAccount - ok for unregistered accounts
     pub fn get_account(&self, account_id: AccountId) -> HumanReadableAccount {
         let account = self.accounts.get(&account_id).unwrap_or_default();
         return HumanReadableAccount {
@@ -520,7 +520,7 @@ impl MetaPool {
     }
 
     /// Returns the list of accounts (staking-pool trait)
-    //warning: self.get_accounts is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+    // note: get_account returns HumanReadableAccount - ok for unregistered accounts
     pub fn get_accounts(&self, from_index: u64, limit: u64) -> Vec<HumanReadableAccount> {
         let keys = self.accounts.keys_as_vector();
         return (from_index..std::cmp::min(from_index + limit, keys.len()))
@@ -662,17 +662,17 @@ impl MetaPool {
             &account_id != &self.treasury_account_id,
             "can't use treasury account"
         );
-        let mut treasury_account = self.internal_get_account(&self.treasury_account_id);
+        let mut treasury_account = self.accounts.get(&self.treasury_account_id).unwrap_or_default();
         assert!(
             &account_id != &self.operator_account_id,
             "can't use operator account"
         );
-        let mut operator_account = self.internal_get_account(&self.operator_account_id);
+        let mut operator_account = self.accounts.get(&self.operator_account_id).unwrap_or_default();
         assert!(
             &account_id != &DEVELOPERS_ACCOUNT_ID,
             "can't use developers account"
         );
-        let mut developers_account = self.internal_get_account(&DEVELOPERS_ACCOUNT_ID.into());
+        let mut developers_account = self.accounts.get(&DEVELOPERS_ACCOUNT_ID.into()).unwrap_or_default();
 
         // The treasury cut in stnear-shares (25% by default)
         let treasury_st_near_cut = apply_pct(self.treasury_swap_cut_basis_points, fee_in_st_near);
