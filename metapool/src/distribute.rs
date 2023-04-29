@@ -380,6 +380,7 @@ impl MetaPool {
             // only if the amount justifies tx-fee
             // most unbalanced pool found & available
             // continue with generating the promise for async cross-contract call to unstake
+            // continue with generating the promise for async cross-contract call to unstake
             self.perform_unstake(gspru.sp_inx as usize, unstake_from_orders, unstake_from_rebalance);
             return self.epoch_unstake_orders > 0; // if needs to be called again
         } else {
