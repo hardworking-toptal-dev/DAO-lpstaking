@@ -229,10 +229,26 @@ impl MetaPool {
         // that amount can be lower than the amount requested to stake
     }
 
-    /// Start a forced rebalance unstake
+    /// Start a forced rebalance unstake of ALL extra for a pool
     /// used by operator when a validator goes offline, to not wait and unstake immediately even over the max-rebalance-cap
     /// the stake of the sp is adjusted to weight, if weight==0, the sp is fully unstaked
     pub fn force_rebalance_unstake(&mut self, inx: u16) {
+        self.perform_rebalance(inx, self.total_for_staking);
+    }
+
+    /// Start a rebalance unstake of PARTIAL extra for a pool (capped by max_unstake_for_rebalance)
+    /// used by operator when a validator to rebalance low performers
+    /// the stake of the sp is adjusted limited by extra and max-rebalance-unstake
+    pub fn rebalance_unstake_sp(&mut self, inx: u16) {
+        let max_unstake_for_rebalance = self.max_unstake_for_rebalance();
+        assert!(self.unstaked_for_rebalance + MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT < max_unstake_for_rebalance, 
+            "max unstake for rebalance already reached");
+        let unstake_rebalance_left = max_unstake_for_rebalance - self.unstaked_for_rebalance;
+        self.perform_rebalance(inx, unstake_rebalance_left);
+    }
+
+    // internal common process for the prev 2 pub fns
+    fn perform_rebalance(&mut self, inx: u16, cap: u128) {
         self.assert_operator_or_owner();
         self.assert_not_busy();
         let sp_inx = inx as usize;
@@ -254,12 +270,15 @@ impl MetaPool {
         );
         // has extra, can be unstaked, start rebalance
         let extra = sp.staked - should_have;
+        // check for cap to unstake 
+        let to_unstake_for_rebal = std::cmp::min(extra, cap);
+
         // Next call affects:
         // total_actually_staked, sp.stake & sp.unstake and total_unstaked_and_waiting, 
         // but it DOES NOT not affect reserve_for_unstake_claims and also DOES NOT change total_for_stake
         // this means that eventually we will retrieve from the pools, more than required for reserve_for_unstake_claims
         // at that point, the extra amount is set for restake (see fn retrieve_funds_from_a_pool), completing the rebalance
-        self.perform_unstake(sp_inx, 0, extra); // unstake for rebalance
+        self.perform_unstake(sp_inx, 0, to_unstake_for_rebal); // unstake for rebalance
     }
 
 
@@ -360,7 +379,7 @@ impl MetaPool {
         if unstake_from_orders + unstake_from_rebalance > 10 * TGAS as u128 {
             // only if the amount justifies tx-fee
             // most unbalanced pool found & available
-            // continue with generateing the promise for async cross-contract call to unstake
+            // continue with generating the promise for async cross-contract call to unstake
             self.perform_unstake(gspru.sp_inx as usize, unstake_from_orders, unstake_from_rebalance);
             return self.epoch_unstake_orders > 0; // if needs to be called again
         } else {
@@ -451,7 +470,7 @@ impl MetaPool {
         } else {
             result = "has failed";
             self.total_actually_staked += total_amount; //undo preventive action considering the amount unstaked
-            self.epoch_unstake_orders += amount_from_unstake_orders.0; //undo preventive action considering the order fulfiled
+            self.epoch_unstake_orders += amount_from_unstake_orders.0; // undo preventive action considering the order fulfilled
         }
 
         log!("Unstaking of {} at @{} {}", total_amount, sp.account_id, result);
