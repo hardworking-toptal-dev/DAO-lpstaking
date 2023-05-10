@@ -116,17 +116,40 @@ fn simtest_simple() {
   //---- alice
   //---- deposit & buy stnear
   let alice = sim.testnet.create_user("alice".to_string(), ntoy(500_000));
+  let prev_contract_balance = balance(&metapool.user_account);
+  println!("prev contract balance {}", prev_contract_balance);
+  let pre_alice = balance(&alice);
+  println!("pre balance(&alice) {}", pre_alice);
   let alice_dep_and_stake = ntoy(100_000);
-  {
+  let gas_tokens_burnt = {
     let res = call!(
       alice,
       metapool.deposit_and_stake(),
       alice_dep_and_stake,
       50 * TGAS
     );
-    check_exec_result(&res);
-  }
-  assert!(balance(&metapool.user_account) >= alice_dep_and_stake);
+    check_exec_result(&res)
+  };
+  println!("total tokens burnt {}", gas_tokens_burnt);
+  let contract_rewards = gas_tokens_burnt / 100 * 30;
+  println!("contract_rewards 30% total tokens burnt {}", contract_rewards);
+  sim.show_account_info(&alice.account_id());
+  let post_contract_balance = balance(&metapool.user_account);
+  println!("post contract balance {}", post_contract_balance);
+  let post_alice = balance(&alice);
+  println!("post balance alice    {}", post_alice);
+  
+  println!("contract added    {}", post_contract_balance-prev_contract_balance);
+  println!("alice removed     {}", pre_alice-post_alice);
+  let extra_contract_added = (post_contract_balance-prev_contract_balance)-alice_dep_and_stake;
+  println!("extra contract added {}, 30% of {}", 
+    extra_contract_added, extra_contract_added/30*100
+  );
+  let alice_spent = alice_dep_and_stake + gas_tokens_burnt;
+  assert_eq!( pre_alice-post_alice, alice_spent);
+  assert!(post_contract_balance >= prev_contract_balance);
+  assert!(post_contract_balance > prev_contract_balance + alice_dep_and_stake);
+  assert!(post_contract_balance < prev_contract_balance + alice_dep_and_stake + contract_rewards);
 
   //---- bob
   let bob = sim.testnet.create_user("bob".to_string(), ntoy(500_000));
@@ -153,7 +176,7 @@ fn simtest_simple() {
       carol_deposit,
       50 * TGAS
     );
-    check_exec_result(&res)
+    check_exec_result(&res);
   }
 
   //contract state
@@ -201,15 +224,16 @@ fn simtest_simple() {
     //check_exec_result_profile(&distribute_result);
     sim.show_sps_staked_balances();
   }
+  const STORAGE_DEPOSIT:u128 = 384 * NEAR / 100_000;
   //check the staking was distributed according to weight
-  let total_staked = alice_dep_and_stake + bob_dep_and_stake;
+  let total_staked = alice_dep_and_stake + bob_dep_and_stake - 2*STORAGE_DEPOSIT;
   for n in 0..sim.sp.len() {
-    let expected: u128 = total_staked * sim.weight_basis_points_vec[n] as u128 / 100;
+    let expected: u128 = total_staked * sim.weight_basis_points_vec[n] as u128 / 10000;
     let staked = sim.sp_staked(n);
     assert!(
       staked >= expected - 1 && staked <= expected + 1,
       "total_for_staking:{}, sp{} balance = {}, wbp:{}, !== expected:{}",
-      alice_dep_and_stake,
+      total_staked,
       n,
       &sim.sp_staked(n),
       sim.weight_basis_points_vec[n],
@@ -360,7 +384,7 @@ fn simtest_simple() {
     let nslp_info = sim.show_account_info(NSLP_INTERNAL_ACCOUNT);
 
     assert_eq!(as_u128(&bob_info["meta"]), 250 * NEAR);
-    assert_eq!(as_u128(&carol_info["meta"]), 1750 * NEAR);
+    assert_eq!(as_u128(&carol_info["meta"]), 700 * NEAR);
   }
 
   println!("-----------------------------------");
@@ -385,8 +409,8 @@ fn simtest_simple() {
     let carol_info = sim.show_account_info(&carol.account_id());
     let new_balance = balance(&carol);
     println!("new balance {}", yton(new_balance));
-    let stnear = as_u128(&carol_info["stnear"]);
-    println!("stnear {}", yton(stnear));
+    let stnear = as_u128(&carol_info["st_near"]);
+    println!("st_near {}", yton(stnear));
     assert_less_than_one_milli_near_diff_balance(
       "rem.liq",
       new_balance + stnear - pre_balance,

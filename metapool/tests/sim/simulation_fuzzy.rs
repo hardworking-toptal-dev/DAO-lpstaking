@@ -128,7 +128,7 @@ pub fn step_random_action(
             &sim,
             &acc,
             "liquid_unstake",
-            json!({"stnear_to_burn": ntoU128(amount_near), "min_expected_near": ntoU128(amount_near*95/100)}),
+            json!({"st_near_to_burn": ntoU128(amount_near), "min_expected_near": ntoU128(amount_near*95/100)}),
             50 * TGAS,
             NO_DEPOSIT,
             &pre,

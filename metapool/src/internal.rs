@@ -1,9 +1,8 @@
-use crate::*;
+use crate::{*, empty_nep_145::STORAGE_COST_YOCTOS};
 use near_sdk::{
     json_types::{ValidAccountId, U128},
     log, AccountId, Balance, Promise, PromiseResult,
 };
-
 pub use crate::types::*;
 pub use crate::utils::*;
 
@@ -54,15 +53,31 @@ impl MetaPool {
 /* Internal methods staking-pool trait */
 /***************************************/
 impl MetaPool {
-    pub(crate) fn internal_deposit(&mut self) {
+    pub(crate) fn internal_deposit(&mut self) -> u128 {
         self.assert_min_deposit_amount(env::attached_deposit());
-        self.internal_deposit_attached_near_into(env::predecessor_account_id());
+        self.internal_deposit_attached_near_into(env::predecessor_account_id())
     }
 
-    pub(crate) fn internal_deposit_attached_near_into(&mut self, account_id: AccountId) {
-        let amount = env::attached_deposit();
+    // adds env::attached_deposit() to account.available
+    // if it is a new account, takes STORAGE_COST_YOCTOS as storage_deposit
+    pub(crate) fn internal_deposit_attached_near_into(&mut self, account_id: AccountId) -> u128 {
 
-        let mut account = self.internal_get_account(&account_id);
+        let opt_account = self.accounts.get(&account_id);
+        let amount = if opt_account.is_none() {
+            // account does not exists
+            // take some yoctos as storage deposit - the user can recover that amount when closing the account 
+            log!(
+                "new account, {} yoctos used for storage_deposit",
+                STORAGE_COST_YOCTOS
+            );
+            assert!(env::attached_deposit() > STORAGE_COST_YOCTOS, "deposit too low");
+            env::attached_deposit() - STORAGE_COST_YOCTOS
+            } 
+        else {
+            // account already exists, use full amount 
+            env::attached_deposit()
+        };
+        let mut account = opt_account.unwrap_or_default();
 
         account.available += amount;
         self.total_available += amount;
@@ -76,6 +91,7 @@ impl MetaPool {
             account_id,
             account.available
         );
+        amount
     }
 
     //------------------------------
@@ -110,6 +126,7 @@ impl MetaPool {
     //------------------------------
     /// takes from account.available and mints stNEAR for account_id
     /// actual stake in a staking-pool is made by the meta-pool-heartbeat before the end of the epoch
+    /// account_id must be registered
     pub(crate) fn internal_stake_from_account(
         &mut self,
         account_id: AccountId,
@@ -148,7 +165,7 @@ impl MetaPool {
     }
 
     //------------------------------
-    /// delayed_usntake, amount_requested is in yoctoNEARs
+    /// delayed_unstake, amount_requested is in yoctoNEARs
     pub(crate) fn internal_unstake(&mut self, amount_requested: u128) {
         self.assert_not_busy();
 
@@ -160,7 +177,7 @@ impl MetaPool {
         let amount_to_unstake: u128;
         let stake_shares_to_burn: u128;
         // if the amount is close to user's total, remove user's total
-        // to: a) do not leave less than ONE_MILLI_NEAR in the account, b) Allow 10 yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
+        // to: a) do not leave less than 1/1000 NEAR in the account, b) Allow 10 yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
         if is_close(amount_requested, valued_shares) {
             // allow for rounding simplification
             amount_to_unstake = valued_shares;
@@ -215,6 +232,7 @@ impl MetaPool {
 
     //--------------------------------------------------
     /// adds liquidity from deposited amount
+    /// account mus be registered previously
     pub(crate) fn internal_nslp_add_liquidity(&mut self, amount_requested: u128) -> u16 {
         self.assert_not_busy();
 
@@ -285,9 +303,13 @@ impl MetaPool {
 
     //--------------------------------
     // fees are extracted by minting a small amount of extra stNEAR
+    // this fn MUST NOT PANIC (is called from a callback clearing busy flags)
     pub(crate) fn add_extra_minted_shares(&mut self, account_id: AccountId, num_shares: u128) {
         if num_shares > 0 {
-            let account = &mut self.internal_get_account(&account_id);
+            // used only for operator & DEVELOPERS_ACCOUNT
+            // use accounts.unwrap_or_default to not panic and also
+            // create account if needed (for tests and first usage after init)
+            let account = &mut self.accounts.get(&account_id).unwrap_or_default();
             account.stake_shares += num_shares;
             self.internal_update_account(&account_id, &account);
             // Increasing the total amount of stake shares (reduces price)
@@ -434,19 +456,22 @@ impl MetaPool {
         // );
     }
 
-    /// Inner method to get the given account or a new default value account.
+    /// Inner method to get the given account - IT MUST exists (has to be previously registered)
     pub(crate) fn internal_get_account(&self, account_id: &String) -> Account {
-        self.accounts.get(account_id).unwrap_or_default()
+        let opt_account = self.accounts.get(account_id);
+        if opt_account.is_none() {
+            panic!("account {} is not registered", account_id)
+        }
+        opt_account.unwrap()
     }
 
+    pub(crate) fn account_exists(&self, account_id: &String) -> bool {
+        self.accounts.get(account_id).is_some()
+    }
+    
     /// Inner method to save the given account for a given account ID.
-    /// If the account balances are 0, the account is deleted instead to release storage.
     pub(crate) fn internal_update_account(&mut self, account_id: &String, account: &Account) {
-        if account.is_empty() {
-            self.accounts.remove(account_id);
-        } else {
-            self.accounts.insert(account_id, &account); //insert_or_update
-        }
+        self.accounts.insert(account_id, &account); //insert_or_update
     }
 
     /// Inner method to get the given account or a new default value account.
@@ -520,7 +545,7 @@ impl MetaPool {
                 // NOTE: Unstaking in the same epoch is only an issue, if you hit the last block of the epoch.
                 //       In this case the receipt may be executed at the next epoch.
                 // NOTE2: core-contracts/staking-pool is imprecise when unstaking, some times 1 to 10 yoctos remain in "unstaked"
-                //        The bot should sincronize unstaked yoctos before calling this function.
+                //        The bot should synchronize unstaked yoctos before calling this function.
                 // We assume that if sp.unstaked>100 yoctos, a new unstake will cause that amount to be blocked
                 if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE || sp.unstk_req_epoch_height == env::epoch_height() {
                     // does this pool requires un-staking? (has too much staked?)
@@ -661,8 +686,8 @@ impl MetaPool {
             PromiseResult::Failed => amount,
         };
 
-        if unused_amount > 0 {
-            let mut receiver_acc = self.internal_get_account(&receiver_id);
+        if unused_amount > 0 {            
+            let mut receiver_acc = self.accounts.get(&receiver_id).unwrap_or_default(); // avoid panics
             let receiver_balance = receiver_acc.stake_shares;
             if receiver_balance > 0 {
                 let refund_amount = std::cmp::min(receiver_balance, unused_amount);
@@ -670,7 +695,7 @@ impl MetaPool {
                 receiver_acc.sub_stake_shares(refund_amount, near_amount);
                 self.internal_update_account(&receiver_id, &receiver_acc);
 
-                let mut sender_acc = self.internal_get_account(&sender_id);
+                let mut sender_acc = self.accounts.get(&sender_id).unwrap_or_default(); // avoid panics
                 sender_acc.add_stake_shares(refund_amount, near_amount);
                 self.internal_update_account(&sender_id, &sender_acc);
 

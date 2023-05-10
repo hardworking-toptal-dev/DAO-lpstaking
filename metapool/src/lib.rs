@@ -120,7 +120,7 @@ pub struct MetaPool {
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
     /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other
-    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstkae claims
+    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstake claims
     /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
     /// This amount decrements at user's delayed-unstake-withdraw, when sending the NEAR to the user
     /// Related variables and Invariant:
@@ -145,7 +145,7 @@ pub struct MetaPool {
     /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_stake_orders: u128,
-    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake migth be done before EOE
+    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake might be done before EOE
     /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
@@ -251,7 +251,7 @@ pub struct MetaPool {
 
     /// up to 1% of the total pool can be unstaked for rebalance (no more than 1% to not affect APY)
     pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
-    /// when some unstake for rebalance is executed, this amountis increased 
+    /// when some unstake for rebalance is executed, this amount is increased 
     /// when some extra is retrieved or recovered in EOE clearing, it is decremented
     /// represents the amount that's not staked because is in transit for rebalance. 
     /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
@@ -386,12 +386,12 @@ impl MetaPool {
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
     pub fn deposit_and_stake(&mut self) {
-        self.internal_deposit();
-        self.internal_stake_from_account(env::predecessor_account_id(), env::attached_deposit());
+        let amount = self.internal_deposit();
+        self.internal_stake_from_account(env::predecessor_account_id(), amount);
         //----------
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
-        // the amount just deposited, migth be swapped in the liquid-unstake pool
-        self.nslp_try_internal_clearing(env::attached_deposit());
+        // the amount just deposited, might be swapped in the liquid-unstake pool
+        self.nslp_try_internal_clearing(amount);
     }
 
     /// Stakes all "unstaked" balance from the inner account of the predecessor.
@@ -429,7 +429,7 @@ impl MetaPool {
 
     /// Returns the unstaked balance of the given account.
     pub fn get_account_unstaked_balance(&self, account_id: AccountId) -> U128String {
-        //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+        // note: get_account returns HumanReadableAccount - ok for unregistered accounts
         return self.get_account(account_id).unstaked_balance;
     }
 
@@ -437,13 +437,13 @@ impl MetaPool {
     /// NOTE: This is computed from the amount of "stake" shares the given account has and the
     /// current amount of total staked balance and total stake shares on the account.
     pub fn get_account_staked_balance(&self, account_id: AccountId) -> U128String {
-        //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+        // note: get_account returns HumanReadableAccount - ok for unregistered accounts
         return self.get_account(account_id).staked_balance;
     }
 
     /// Returns the total balance of the given account (including staked and unstaked balances).
     pub fn get_account_total_balance(&self, account_id: AccountId) -> U128String {
-        let acc = self.internal_get_account(&account_id);
+        let acc = self.accounts.get(&account_id).unwrap_or_default();
         return (acc.available + self.amount_from_stake_shares(acc.stake_shares) + acc.unstaked)
             .into();
     }
@@ -451,13 +451,13 @@ impl MetaPool {
     /// additional to staking-pool to satisfy generic deposit-NEP-standard
     /// returns the amount that can be withdrawn immediately
     pub fn get_account_available_balance(&self, account_id: AccountId) -> U128String {
-        let acc = self.internal_get_account(&account_id);
+        let acc = self.accounts.get(&account_id).unwrap_or_default();
         return acc.available.into();
     }
 
     /// Returns `true` if the given account can withdraw tokens in the current epoch.
     pub fn is_account_unstaked_balance_available(&self, account_id: AccountId) -> bool {
-        //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+        // note: get_account returns HumanReadableAccount - ok for unregistered accounts
         return self.get_account(account_id).can_withdraw;
     }
 
@@ -503,9 +503,9 @@ impl MetaPool {
     /// to implement the Staking-pool interface, get_account returns the same as the staking-pool returns
     /// full account info can be obtained by calling: pub fn get_account_info(&self, account_id: AccountId) -> GetAccountInfoResult
     /// Returns human readable representation of the account for the given account ID.
-    //warning: self.get_account is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+    // note: get_account returns HumanReadableAccount - ok for unregistered accounts
     pub fn get_account(&self, account_id: AccountId) -> HumanReadableAccount {
-        let account = self.internal_get_account(&account_id);
+        let account = self.accounts.get(&account_id).unwrap_or_default();
         return HumanReadableAccount {
             account_id,
             unstaked_balance: account.unstaked.into(),
@@ -520,7 +520,7 @@ impl MetaPool {
     }
 
     /// Returns the list of accounts (staking-pool trait)
-    //warning: self.get_accounts is public and gets HumanReadableAccount .- do not confuse with self.internal_get_account
+    // note: get_account returns HumanReadableAccount - ok for unregistered accounts
     pub fn get_accounts(&self, from_index: u64, limit: u64) -> Vec<HumanReadableAccount> {
         let keys = self.accounts.keys_as_vector();
         return (from_index..std::cmp::min(from_index + limit, keys.len()))
@@ -662,17 +662,17 @@ impl MetaPool {
             &account_id != &self.treasury_account_id,
             "can't use treasury account"
         );
-        let mut treasury_account = self.internal_get_account(&self.treasury_account_id);
+        let mut treasury_account = self.accounts.get(&self.treasury_account_id).unwrap_or_default();
         assert!(
             &account_id != &self.operator_account_id,
             "can't use operator account"
         );
-        let mut operator_account = self.internal_get_account(&self.operator_account_id);
+        let mut operator_account = self.accounts.get(&self.operator_account_id).unwrap_or_default();
         assert!(
             &account_id != &DEVELOPERS_ACCOUNT_ID,
             "can't use developers account"
         );
-        let mut developers_account = self.internal_get_account(&DEVELOPERS_ACCOUNT_ID.into());
+        let mut developers_account = self.accounts.get(&DEVELOPERS_ACCOUNT_ID.into()).unwrap_or_default();
 
         // The treasury cut in stnear-shares (25% by default)
         let treasury_st_near_cut = apply_pct(self.treasury_swap_cut_basis_points, fee_in_st_near);
@@ -770,8 +770,8 @@ impl MetaPool {
     pub fn nslp_add_liquidity(&mut self) -> u16 {
         // TODO: Since this method doesn't guard the resulting liquidity, is it possible to put it
         //    into a front-run/end-run sandwich to capitalize on the transaction?
-        self.internal_deposit();
-        return self.internal_nslp_add_liquidity(env::attached_deposit());
+        let amount = self.internal_deposit();
+        return self.internal_nslp_add_liquidity(amount);
     }
 
     /// remove liquidity from liquidity pool
@@ -863,7 +863,7 @@ impl MetaPool {
 
     //----------------------------------
     // Use part of the NSLP to stake. This is the inverse operation of nslp_try_internal_clearing
-    // can be used by the operator to increase ecpoch_stake_orders 
+    // can be used by the operator to increase epoch_stake_orders 
     // to later direct stake in validators that are about to lose the seat
     // ---------------------------------
     #[payable]
@@ -907,7 +907,7 @@ impl MetaPool {
     }
 
     pub fn realize_meta(&mut self, account_id: String) {
-        // this fn shoudl not be called for the NSLP_INTERNAL_ACCOUNT
+        // this fn should not be called for the NSLP_INTERNAL_ACCOUNT
         assert!(account_id!=NSLP_INTERNAL_ACCOUNT);
 
         let mut acc = self.internal_get_account(&account_id);
