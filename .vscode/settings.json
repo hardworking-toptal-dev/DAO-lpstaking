@@ -21,12 +21,12 @@
         "multifuntok",
         "nanos",
         "nslp",
+        "nspl",
         "ntoy",
+        "poolv",
         "quickcheck",
         "rebal",
         "rebalance",
-        "rebalancing",
-        "restake",
         "rebalances",
         "rebalancing",
         "restake",
@@ -40,8 +40,8 @@
         "stnear",
         "TGAS",
         "unregister",
-        "UNSTAKE",
         "unstake",
+        "UNSTAKE",
         "unstaked",
         "unstakers",
         "unstakes",
@@ -52,7 +52,7 @@
         "WITHD",
         "yocto",
         "yoctos",
-        "yton",
-        "ytof"
+        "ytof",
+        "yton"
     ]
 }

@@ -197,8 +197,8 @@ impl MetaPool {
             available: acc.available.into(),
             st_near: acc.stake_shares.into(),
             valued_st_near: staked_near.into(),
-            meta: acc.total_meta(self).into(),
-            realized_meta: acc.realized_meta.into(),
+            realized_meta: 0.into(), // internal $META incentives have been disabled
+            meta: acc.realized_meta.into(), // send here for reference - disabled, historic data
             unstaked: acc.unstaked.into(),
             unstaked_requested_unlock_epoch: acc.unstaked_requested_unlock_epoch.into(),
             unstake_full_epochs_wait_left: acc

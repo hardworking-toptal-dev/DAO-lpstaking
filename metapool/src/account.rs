@@ -32,7 +32,7 @@ pub struct Account {
     /// The funds will be locked for -AT LEAST- NUM_EPOCHS_TO_UNLOCK epochs
     pub unstaked_requested_unlock_epoch: EpochHeight,
 
-    //-- META
+    //-- META INCENTIVES (Disabled on 2023-05)
     ///realized META, can be used to transfer META from one user to another
     // Total META = realized_meta + staking_meter.mul_rewards(valued_stake_shares) + lp_meter.mul_rewards(valued_lp_shares)
     // Every time the user operates on STAKE/UNSTAKE: we realize meta: realized_meta += staking_meter.mul_rewards(valued_staked_shares)
@@ -98,41 +98,6 @@ impl Account {
     #[inline]
     pub fn valued_nslp_shares(&self, main: &MetaPool, nslp_account: &Account) -> u128 {
         main.amount_from_nslp_shares(self.nslp_shares, &nslp_account)
-    }
-
-    /// return realized meta plus pending rewards
-    pub fn total_meta(&self, main: &MetaPool) -> u128 {
-        let valued_stake_shares = main.amount_from_stake_shares(self.stake_shares);
-        let nslp_account = main.internal_get_nslp_account();
-        let valued_lp_shares = self.valued_nslp_shares(main, &nslp_account);
-        //debug!("self.realized_meta:{}, self.staking_meter.compute_rewards(valued_stake_shares):{} self.lp_meter.compute_rewards(valued_lp_shares):{}",
-        //    self.realized_meta, self.staking_meter.compute_rewards(valued_stake_shares), self.lp_meter.compute_rewards(valued_lp_shares));
-        return self.realized_meta
-            + self.staking_meter.compute_rewards(valued_stake_shares, main.est_meta_rewards_stakers, main.max_meta_rewards_stakers)
-            + self.lp_meter.compute_rewards(valued_lp_shares, main.est_meta_rewards_lp, main.max_meta_rewards_lp);
-    }
-
-    //---------------------------------
-    /// realize meta from staking rewards
-    pub fn stake_realize_meta(&mut self, main: &mut MetaPool) {
-        //realize meta pending rewards on LP operation
-        let valued_actual_shares = main.amount_from_stake_shares(self.stake_shares);
-        let pending_meta = self
-            .staking_meter
-            .realize(valued_actual_shares, main.staker_meta_mult_pct, main.est_meta_rewards_stakers, main.max_meta_rewards_stakers);
-        self.realized_meta += pending_meta;
-        main.total_meta += pending_meta;
-    }
-
-    /// realize meta from nslp fees
-    pub fn nslp_realize_meta(&mut self, nslp_account: &Account, main: &mut MetaPool) {
-        //realize meta pending rewards on LP operation
-        let valued_actual_shares = self.valued_nslp_shares(main, &nslp_account);
-        let pending_meta = self
-            .lp_meter
-            .realize(valued_actual_shares, main.lp_provider_meta_mult_pct, main.est_meta_rewards_lp, main.max_meta_rewards_lp);
-        self.realized_meta += pending_meta;
-        main.total_meta += pending_meta;
     }
 
     //----------------

@@ -195,8 +195,6 @@ impl MetaPool {
             valued_shares
         );
         assert!(stake_shares_to_burn > 0 && stake_shares_to_burn <= acc.stake_shares);
-        //use this operation to realize meta pending rewards
-        acc.stake_realize_meta(self);
 
         //remove acc stake shares
         acc.sub_stake_shares(stake_shares_to_burn, amount_to_unstake);
@@ -244,9 +242,6 @@ impl MetaPool {
 
         //get NSLP account
         let mut nslp_account = self.internal_get_nslp_account();
-
-        //use this LP operation to realize meta pending rewards
-        acc.nslp_realize_meta(&nslp_account, self);
 
         // Calculate the number of "nslp" shares the account will receive for adding the given amount of near liquidity
         let num_shares = self.nslp_shares_from_amount(amount, &nslp_account);
@@ -598,67 +593,6 @@ impl MetaPool {
         self.internal_update_account(&sender_id, &sender_acc);
         self.internal_update_account(&receiver_id, &receiver_acc);
     }
-
-    // MULTI FUN TOKEN [NEP-138](https://github.com/near/NEPs/pull/138)
-    /// Transfer `amount` of tok tokens from the caller of the contract (`predecessor_id`) to `receiver_id`.
-    /// Requirements:
-    /// * receiver_id must pre-exist
-    /// LMT - commented, no longer used
-    /*
-    pub fn internal_multifuntok_transfer(
-        &mut self,
-        sender_id: &AccountId,
-        receiver_id: &AccountId,
-        symbol: &str,
-        amount: u128,
-    ) {
-        assert_ne!(
-            sender_id, receiver_id,
-            "Sender and receiver should be different"
-        );
-        assert!(amount > 0, "The amount should be a positive number");
-        let mut sender_acc = self.internal_get_account(&sender_id);
-        let mut receiver_acc = self.internal_get_account(&receiver_id);
-        match &symbol as &str {
-            "NEAR" => {
-                assert!(
-                    sender_acc.available >= amount,
-                    "@{} not enough NEAR available {}",
-                    sender_id,
-                    sender_acc.available
-                );
-                sender_acc.available -= amount;
-                receiver_acc.available += amount;
-            }
-            STNEAR => {
-                let max_stnear = sender_acc.stake_shares;
-                assert!(
-                    amount <= max_stnear,
-                    "@{} not enough stNEAR balance {}",
-                    sender_id,
-                    max_stnear
-                );
-                let near_amount = self.amount_from_stake_shares(amount); //amount is in stNEAR(aka shares), let's compute how many nears that is
-                sender_acc.sub_stake_shares(amount, near_amount);
-                receiver_acc.add_stake_shares(amount, near_amount);
-            }
-            "META" => {
-                sender_acc.stake_realize_meta(self);
-                assert!(
-                    sender_acc.realized_meta >= amount,
-                    "@{} not enough $META balance {}",
-                    sender_id,
-                    sender_acc.realized_meta
-                );
-                sender_acc.realized_meta -= amount;
-                receiver_acc.realized_meta += amount;
-            }
-            _ => panic!("invalid symbol"),
-        }
-        self.internal_update_account(&sender_id, &sender_acc);
-        self.internal_update_account(&receiver_id, &receiver_acc);
-    }
-    */
 
     // ft_token, executed after ft_transfer_call,
     // resolves (maybe refunds)

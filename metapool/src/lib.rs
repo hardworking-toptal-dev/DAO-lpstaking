@@ -88,10 +88,10 @@ pub trait ExtMetaStakingPoolOwnerCallbacks {
     fn after_minting_meta(self, account_id: AccountId, to_mint: U128String);
 }
 
-#[ext_contract(meta_token_mint)]
-pub trait MetaToken {
-    fn mint(&mut self, account_id: AccountId, amount: U128String);
-}
+// #[ext_contract(meta_token_mint)]
+// pub trait MetaToken {
+//     fn mint(&mut self, account_id: AccountId, amount: U128String);
+// }
 
 //------------------------
 //  Main Contract State --
@@ -646,14 +646,6 @@ impl MetaPool {
         nslp_account.available -= near_to_receive;
         user_account.available += near_to_receive;
 
-        // keep track of meta rewards for LPs
-        self.est_meta_rewards_lp += damp_multiplier(
-            fee,
-            self.lp_provider_meta_mult_pct,
-            self.est_meta_rewards_lp,
-            self.max_meta_rewards_lp,
-        );
-
         // compute how many shares the swap fee represent
         let fee_in_st_near = self.stake_shares_from_amount(fee);
 
@@ -686,19 +678,6 @@ impl MetaPool {
         let developers_st_near_cut = apply_pct(DEVELOPERS_SWAP_CUT_BASIS_POINTS, fee_in_st_near);
         developers_account.add_st_near(developers_st_near_cut, &self);
 
-        // all the realized meta from non-liq.provider cuts (30%), send to operator & developers
-        let st_near_non_lp_cut =
-            treasury_st_near_cut + operator_st_near_cut + developers_st_near_cut;
-        let meta_from_operation = damp_multiplier(
-            st_near_non_lp_cut,
-            self.lp_provider_meta_mult_pct,
-            self.est_meta_rewards_lp,
-            self.max_meta_rewards_lp,
-        );
-        self.total_meta += meta_from_operation;
-        operator_account.realized_meta += meta_from_operation / 2;
-        developers_account.realized_meta += meta_from_operation / 2;
-
         debug!("treasury_st_near_cut:{} operator_st_near_cut:{} developers_st_near_cut:{} fee_in_st_near:{}",
             treasury_st_near_cut,operator_st_near_cut,developers_st_near_cut,fee_in_st_near);
 
@@ -717,17 +696,6 @@ impl MetaPool {
 
         //complete the transfer, remove stnear from the user (stnear was transferred to the LP & others)
         user_account.sub_st_near(st_near_to_sell, &self);
-        //mint $META for the selling user
-        let meta_to_seller = damp_multiplier(
-            fee_in_st_near,
-            self.stnear_sell_meta_mult_pct,
-            self.est_meta_rewards_lu,
-            self.max_meta_rewards_lu,
-        );
-        self.total_meta += meta_to_seller;
-        // keep track of meta rewards for lu's
-        self.est_meta_rewards_lu += meta_to_seller;
-        user_account.realized_meta += meta_to_seller;
 
         //Save involved accounts
         self.internal_update_account(&self.treasury_account_id.clone(), &treasury_account);
@@ -749,7 +717,7 @@ impl MetaPool {
             &account_id,
             st_near_to_sell,
             transfer_amount,
-            meta_to_seller
+            0 // meta_to_seller
         );
         event!(
             r#"{{"event":"LIQ.U","account_id":"{}","stnear":"{}","near":"{}"}}"#,
@@ -761,7 +729,7 @@ impl MetaPool {
         return LiquidUnstakeResult {
             near: transfer_amount.into(),
             fee: fee_in_st_near.into(),
-            meta: meta_to_seller.into(),
+            meta: 0.into() // meta_to_seller.into(),
         };
     }
 
@@ -783,9 +751,6 @@ impl MetaPool {
         let account_id = env::predecessor_account_id();
         let mut acc = self.internal_get_account(&account_id);
         let mut nslp_account = self.internal_get_nslp_account();
-
-        //use this LP operation to realize meta pending rewards
-        acc.nslp_realize_meta(&nslp_account, self);
 
         //how much does this user owns
         let valued_actual_shares = acc.valued_nslp_shares(self, &nslp_account);
@@ -879,105 +844,19 @@ impl MetaPool {
         self.internal_stake_from_account(NSLP_INTERNAL_ACCOUNT.to_string(), amount)
     }
 
-    //------------------
-    // REALIZE META
-    //------------------
-    /// massive convert $META from virtual to secure. IF multipliers are changed, virtual meta can decrease, this fn realizes current meta to not suffer loses
-    /// for all accounts from index to index+limit
-    pub fn realize_meta_massive(&mut self, from_index: u64, limit: u64) {
-        for inx in
-            from_index..std::cmp::min(from_index + limit, self.accounts.keys_as_vector().len())
-        {
-            let account_id = &self.accounts.keys_as_vector().get(inx).unwrap();
-            if account_id == NSLP_INTERNAL_ACCOUNT {
-                continue;
-            }
-            let mut acc = self.internal_get_account(&account_id);
-            let prev_meta = acc.realized_meta;
-
-            acc.stake_realize_meta(self);
-            //get NSLP account
-            let nslp_account = self.internal_get_nslp_account();
-            //realize and mint meta from LP rewards
-            acc.nslp_realize_meta(&nslp_account, self);
-            if prev_meta != acc.realized_meta {
-                self.internal_update_account(&account_id, &acc);
-            }
-        }
-    }
-
+    /// obsolete, kept for bin compat
     pub fn realize_meta(&mut self, account_id: String) {
         // this fn should not be called for the NSLP_INTERNAL_ACCOUNT
         assert!(account_id!=NSLP_INTERNAL_ACCOUNT);
-
-        let mut acc = self.internal_get_account(&account_id);
-
-        //realize and mint $META from staking rewards
-        acc.stake_realize_meta(self);
-
-        //get NSLP account
-        let nslp_account = self.internal_get_nslp_account();
-        //realize and mint meta from LP rewards
-        acc.nslp_realize_meta(&nslp_account, self);
-
-        self.internal_update_account(&account_id, &acc);
     }
 
     //------------------
     // HARVEST META
     //------------------
     #[payable]
-    ///compute all $META rewards at this point and mint $META tokens in the meta-token NEP-141 contract for the user
+    /// obsolete - kept for bin compat
     pub fn harvest_meta(&mut self) -> Promise {
-        assert_one_yocto();
-        let account_id = env::predecessor_account_id();
-        let mut acc = self.internal_get_account(&account_id);
-
-        //realize and mint $META from staking rewards
-        acc.stake_realize_meta(self);
-
-        //get NSLP account
-        let nslp_account = self.internal_get_nslp_account();
-        //realize and mint meta from LP rewards
-        acc.nslp_realize_meta(&nslp_account, self);
-
-        // Note: we make `acc.realized_meta = 0` here and rollback the changes in
-        //    `Self::after_minting_meta` in case the transfer fails.
-        //    This is to not be vulnerable to the multi-call attack.
-        //    If we don't, While `mint` is still pending, the attacker may call `harvest_meta`
-        //    again and get `realized_meta` transferred multiple times.
-        let to_mint = acc.realized_meta;
-        //--SAVE ACCOUNT
-        acc.realized_meta = 0;
-        self.internal_update_account(&account_id, &acc);
-
-        //schedule async to mint the $META-tokens for the user
-        meta_token_mint::mint(
-            account_id.clone(), // to whom
-            to_mint.into(),     //how much meta
-            // extra call args
-            &self.meta_token_account_id,
-            1, // 1 yocto hack
-            gas::BASE_GAS,
-        )
-        .then(ext_self_owner::after_minting_meta(
-            account_id,     // to whom
-            to_mint.into(), // how much
-            // extra call args
-            &env::current_account_id(),
-            NO_DEPOSIT,
-            gas::BASE_GAS,
-        ))
-    }
-    //prev fn continues here
-    pub fn after_minting_meta(&mut self, account_id: AccountId, to_mint: U128String) {
-        assert_callback_calling();
-        if !is_promise_success() {
-            //minting $META failed, rollback
-            let mut acc = self.internal_get_account(&account_id);
-            acc.realized_meta = to_mint.0;
-            self.internal_update_account(&account_id, &acc);
-        }
+        panic!("internal $META incentives have been deactivated. Use stNEAR in the ecosystem to get incentives");
     }
 
     //---------------------------------------------------------------------------
