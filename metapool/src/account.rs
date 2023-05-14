@@ -87,18 +87,12 @@ impl Default for Account {
 }
 impl Account {
 
+    /// if the account can be closed and storage deposit returned
     pub fn can_be_closed(&self) -> bool {
         self.available == 0
         && self.unstaked == 0
         && self.stake_shares == 0
         && self.nslp_shares == 0
-    }
-
-    /// when the account.is_empty() it will be removed
-    pub fn is_empty(&self) -> bool {
-        self.can_be_closed()
-        && self.realized_meta == 0
-        && self.trip_start_stnear == 0 // repurposed field;
     }
 
     #[inline]
