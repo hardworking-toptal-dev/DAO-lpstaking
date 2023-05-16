@@ -6,9 +6,8 @@ use crate::*;
 
 // --------------------------------------------------------------------------
 // Storage Management
-// storage is 384 bytes per account, at price = 1 NEAR/100Kib => 0.00384 NEAR per account 
 // --------------------------------------------------------------------------
-pub const STORAGE_COST_YOCTOS: u128 = ONE_NEAR / 100_000 * 384;
+pub const STORAGE_COST_YOCTOS: u128 = ONE_NEAR / 100_000 * 125;
 // storage is fixed, if the account is registered, STORAGE_COST_YOCTOS was received, 
 // when the account is unregistered, STORAGE_COST_YOCTOS are returned 
 
