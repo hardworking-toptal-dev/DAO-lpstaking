@@ -87,6 +87,7 @@ impl MetaPool {
         self.assert_operator_or_owner();
         assert!(
             account_id.ends_with(".poolv1.near") 
+                || account_id.ends_with(".pool.near") 
                 || account_id.ends_with(".pool.f863973.m0") 
                 || account_id.ends_with(".testnet"),
             "invalid staking-pool contract account {}", account_id);
@@ -403,6 +404,5 @@ impl MetaPool {
             total_extra: gspru.total_extra.into(),
         }
     }
-
 
 }
