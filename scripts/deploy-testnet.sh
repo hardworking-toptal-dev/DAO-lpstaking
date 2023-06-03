@@ -26,6 +26,7 @@ export NEAR_ENV=$NETWORK
 
 # set contract busy to make sure we're not upgrading in the middle of a cross-contract call
 set -ex
+bash build.sh
 near call $CONTRACT_ACC set_busy '{"value":true}' --accountId $OPERATOR_ACC --depositYocto 1
 set -e
 

@@ -65,7 +65,7 @@ impl MetaPool {
         let opt_account = self.accounts.get(&account_id);
         let amount = if opt_account.is_none() {
             // account does not exists
-            // take some yoctos as storage deposit - the user can recover that amount when closing the account 
+            // take some yoctos as storage deposit - the user can recover that amount when closing the account
             log!(
                 "new account, {} yoctos used for storage_deposit",
                 STORAGE_COST_YOCTOS
@@ -74,7 +74,7 @@ impl MetaPool {
             env::attached_deposit() - STORAGE_COST_YOCTOS
             } 
         else {
-            // account already exists, use full amount 
+            // account already exists, use full amount
             env::attached_deposit()
         };
         let mut account = opt_account.unwrap_or_default();
@@ -131,7 +131,7 @@ impl MetaPool {
         &mut self,
         account_id: AccountId,
         near_amount: Balance,
-    ) {
+    ) -> u128 {
         self.assert_not_busy();
 
         self.assert_min_deposit_amount(near_amount);
@@ -162,6 +162,7 @@ impl MetaPool {
             account_id,
             amount
         );
+        num_shares
     }
 
     //------------------------------
@@ -170,33 +171,32 @@ impl MetaPool {
         self.assert_not_busy();
 
         let account_id = env::predecessor_account_id();
-        let mut acc = self.internal_get_account(&account_id);
+        let acc = self.internal_get_account(&account_id);
 
-        let valued_shares = self.amount_from_stake_shares(acc.stake_shares);
+        // compute how much shares it will be
+        let shares_from_requested = self.stake_shares_from_amount(amount_requested);
 
-        let amount_to_unstake: u128;
-        let stake_shares_to_burn: u128;
+        let stake_shares_to_burn: u128 =
         // if the amount is close to user's total, remove user's total
         // to: a) do not leave less than 1/1000 NEAR in the account, b) Allow 10 yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
-        if is_close(amount_requested, valued_shares) {
+        if is_close(acc.stake_shares, shares_from_requested) {
             // allow for rounding simplification
-            amount_to_unstake = valued_shares;
-            stake_shares_to_burn = acc.stake_shares; // close enough to all shares, burn-it all (avoid leaving "dust")
+            acc.stake_shares // close enough to all shares, burn all shares (avoid leaving "dust")
         } else {
-            //use amount_requested
-            amount_to_unstake = amount_requested;
-            // Calculate the number shares that the account will burn based on the amount requested
-            stake_shares_to_burn = self.stake_shares_from_amount(amount_requested);
-        }
+            // use amount_requested
+            shares_from_requested
+        };
+        self.internal_unstake_shares(stake_shares_to_burn);
+    }
 
-        assert!(
-            valued_shares >= amount_to_unstake,
-            "Not enough value {} to unstake the requested amount",
-            valued_shares
-        );
+    pub(crate) fn internal_unstake_shares(&mut self, stake_shares_to_burn: u128) -> u128 {
+        self.assert_not_busy();
+
+        let account_id = env::predecessor_account_id();
+        let mut acc = self.internal_get_account(&account_id);
         assert!(stake_shares_to_burn > 0 && stake_shares_to_burn <= acc.stake_shares);
-
         //remove acc stake shares
+        let amount_to_unstake = self.amount_from_stake_shares(stake_shares_to_burn);
         acc.sub_stake_shares(stake_shares_to_burn, amount_to_unstake);
         //the amount is now "unstaked", i.e. the user has a claim to this amount, 4-8 epochs form now
         acc.unstaked += amount_to_unstake;
@@ -226,6 +226,8 @@ impl MetaPool {
             acc.stake_shares,
             env::epoch_height()
         );
+        // return near amount 
+        amount_to_unstake
     }
 
     //--------------------------------------------------
@@ -463,7 +465,7 @@ impl MetaPool {
     pub(crate) fn account_exists(&self, account_id: &String) -> bool {
         self.accounts.get(account_id).is_some()
     }
-    
+
     /// Inner method to save the given account for a given account ID.
     pub(crate) fn internal_update_account(&mut self, account_id: &String, account: &Account) {
         self.accounts.insert(account_id, &account); //insert_or_update
@@ -559,10 +561,10 @@ impl MetaPool {
         }
 
         GSPRUResult {
-            sp_inx: selected_sp_inx as u16, 
-            extra: selected_extra_amount, 
-            count_unblocked, 
-            count_with_stake, 
+            sp_inx: selected_sp_inx as u16,
+            extra: selected_extra_amount,
+            count_unblocked,
+            count_with_stake,
             total_extra}
     }
 
@@ -620,7 +622,7 @@ impl MetaPool {
             PromiseResult::Failed => amount,
         };
 
-        if unused_amount > 0 {            
+        if unused_amount > 0 {
             let mut receiver_acc = self.accounts.get(&receiver_id).unwrap_or_default(); // avoid panics
             let receiver_balance = receiver_acc.stake_shares;
             if receiver_balance > 0 {

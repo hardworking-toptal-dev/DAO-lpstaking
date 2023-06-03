@@ -14,7 +14,7 @@ const SOURCE_URL: &str = "github.com/Meta-Pool/liquid-staking-contract";
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};
-use near_sdk::json_types::Base58PublicKey;
+use near_sdk::json_types::{Base58PublicKey};
 use near_sdk::{env, ext_contract, log, near_bindgen, AccountId, PanicOnDefault, Promise};
 
 //-- Sputnik DAO remote upgrade requires BLOCKCHAIN_INTERFACE low-level access
@@ -385,13 +385,14 @@ impl MetaPool {
 
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
-    pub fn deposit_and_stake(&mut self) {
+    pub fn deposit_and_stake(&mut self) -> U128String {
         let amount = self.internal_deposit();
-        self.internal_stake_from_account(env::predecessor_account_id(), amount);
+        let shares = self.internal_stake_from_account(env::predecessor_account_id(), amount);
         //----------
         // check if the liquidity pool needs liquidity, and then use this opportunity to liquidate stnear in the LP by internal-clearing
         // the amount just deposited, might be swapped in the liquid-unstake pool
         self.nslp_try_internal_clearing(amount);
+        shares.into()
     }
 
     /// Stakes all "unstaked" balance from the inner account of the predecessor.
@@ -412,17 +413,23 @@ impl MetaPool {
     pub fn unstake_all(&mut self) {
         let account_id = env::predecessor_account_id();
         let account = self.internal_get_account(&account_id);
-        let amount = self.amount_from_stake_shares(account.stake_shares);
-        self.internal_unstake(amount);
+        self.internal_unstake_shares(account.stake_shares);
     }
 
-    /// Unstakes the given amount from the inner account of the predecessor.
+    /// Unstakes the given amount (in NEAR) from the inner account of the predecessor.
     /// The inner account should have enough staked balance.
     /// The new total unstaked balance will be available for withdrawal in four epochs.
+    /// delayed_unstake, amount_requested is in yoctoNEARs
     pub fn unstake(&mut self, amount: U128String) {
         self.internal_unstake(amount.0);
     }
 
+    /// extra method: Unstakes the exact amount of shares
+    /// The new total unstaked balance will be available for withdrawal in four epochs.
+    /// delayed_unstake, amount_requested is in stNEAR/shares
+    pub fn unstake_shares(&mut self, shares: U128String) -> U128String {
+        self.internal_unstake_shares(shares.0).into()
+    }
     /*****************************/
     /* staking-pool View methods */
     /*****************************/
@@ -474,6 +481,9 @@ impl MetaPool {
                 .into(),
             denominator: 10_000,
         };
+    }
+    pub fn get_reward_fee_bp(&self) -> u16 {
+        self.operator_rewards_fee_basis_points + DEVELOPERS_REWARDS_FEE_BASIS_POINTS
     }
 
     #[payable]
@@ -841,7 +851,7 @@ impl MetaPool {
         assert!(nslp_account.available > amount,"too much");
         assert!(nslp_account.available - amount > self.nslp_liquidity_target, "stake will leave NSLP below target");
         // stake from nslp
-        self.internal_stake_from_account(NSLP_INTERNAL_ACCOUNT.to_string(), amount)
+        self.internal_stake_from_account(NSLP_INTERNAL_ACCOUNT.to_string(), amount);
     }
 
     /// obsolete, kept for bin compat

@@ -198,11 +198,13 @@ impl Account {
         // if the amount is close to user's total, remove user's total
         // to: a) do not leave less than ONE_MILLI_NEAR in the account, b) Allow some yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
         // Audit Note: Do not do this for .lockup accounts because the lockup contract relies on precise amounts
-        if !env::predecessor_account_id().ends_with(".lockup.near") && is_close(amount_requested, self.available) { // allow for rounding simplification
-            self.available
+        if env::predecessor_account_id().ends_with(".lockup.near") 
+        || env::predecessor_account_id() == "lockup.meta-pool.near" // also consider lockup.meta-pool.near contract
+        || !is_close(amount_requested, self.available) { 
+            amount_requested
         }
         else {
-            amount_requested
+            self.available // allow for rounding simplification
         };
 
         assert!(
