@@ -144,14 +144,13 @@ impl MetaPool {
     //prev fn continues here
     /// Called after amount is staked into a staking-pool
     /// This method needs to update staking pool status.
+    #[private]
     pub fn on_staking_pool_stake_maybe_deposit(
         &mut self,
         sp_inx: usize,
         amount: u128,
         included_deposit: bool,
     ) -> bool {
-        assert_callback_calling();
-
         let sp = &mut self.staking_pools[sp_inx];
         let sp_account_id = sp.account_id.clone();
 
@@ -440,14 +439,13 @@ impl MetaPool {
     /// The prev fn continues here
     /// Called after the given amount was unstaked at the staking pool contract.
     /// This method needs to update staking pool status.
+    #[private]
     pub fn on_staking_pool_unstake(&mut self, 
         sp_inx: usize, 
         amount_from_unstake_orders: U128String, 
         amount_from_rebalance: U128String, 
     ) 
     {
-        assert_callback_calling();
-
         let sp = &mut self.staking_pools[sp_inx];
         let total_amount = amount_from_unstake_orders.0 + amount_from_rebalance.0;
 
@@ -564,6 +562,7 @@ impl MetaPool {
 
     /// prev fn continues here - sync_unstaked_balance
     //------------------------------
+    #[private]
     pub fn on_get_sp_unstaked_balance(
         &mut self,
         sp_inx: usize,
@@ -577,8 +576,6 @@ impl MetaPool {
 
         //we enter here after asking the staking-pool how much do we have *unstaked*
         //unstaked_balance: U128String contains the answer from the staking-pool
-
-        assert_callback_calling();
 
         let sp = &mut self.staking_pools[sp_inx];
 
@@ -705,7 +702,7 @@ impl MetaPool {
     #[callback] marked-arguments are parsed in order. The position within arguments are not important, but the order is.
     If you have 2 arguments marked as #[callback] then you need to expect 2 promise results joined with promise_and
     */
-
+    #[private]
     pub fn on_get_sp_total_balance(
         &mut self,
         sp_inx: usize,
@@ -713,8 +710,6 @@ impl MetaPool {
     ) {
         //we enter here after asking the staking-pool how much do we have staked (plus rewards)
         //total_balance: U128String contains the answer from the staking-pool
-
-        assert_callback_calling();
 
         //new_total_balance has the new staked amount for this pool
         let new_total_balance: u128;
@@ -854,8 +849,8 @@ impl MetaPool {
     }
     //prev fn continues here
     /// This method needs to update staking pool busyLock
+    #[private]
     pub fn on_retrieve_from_staking_pool(&mut self, inx: u16) -> U128String {
-        assert_callback_calling();
 
         let sp = &mut self.staking_pools[inx as usize];
         let sp_account_id = sp.account_id.clone();

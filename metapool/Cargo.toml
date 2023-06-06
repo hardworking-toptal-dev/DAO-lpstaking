@@ -2,23 +2,15 @@
 edition = "2018"
 name = "metapool"
 version = "1.2.1"
-authors = ["Narwallets.com <hello@narwallets.com>"]
+authors = ["Metapool.app <hello@metapool.app>"]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 
-#near-sdk = "2.0.1"
-#near-sdk = { git = "https://github.com/Narwallets/near-sdk-rs" }
-
 near-sdk = { git = "https://github.com/near/near-sdk-rs.git", tag="3.1.0" }
 near-contract-standards = { git = "https://github.com/near/near-sdk-rs.git", tag="3.1.0" }
-
-
-#near-sdk = { git = "https://github.com/near/near-sdk-rs", tag="3.0.1" }
-#near-contract-standards = { git = "https://github.com/near/near-sdk-rs.git", tag="3.0.1" }
-
 
 uint = { version = "0.8.3", default-features = false }
 
@@ -32,15 +24,4 @@ env_logger = { version = "0.7.1", default-features = false }
 rand = "*"
 rand_pcg = "*"
 
-# near-crypto = { git = "https://github.com/nearprotocol/nearcore.git" }
-# near-primitives = { git = "https://github.com/nearprotocol/nearcore.git" }
-
 near-sdk-sim = { git = "https://github.com/near/near-sdk-rs", tag="3.1.0"  }
-#near-sdk-sim = { git = "https://github.com/near/near-sdk-rs", tag="2.4.0" }
-#near-sdk-sim = { git = "https://github.com/Narwallets/near-sdk-rs.git", tag="2.4.0" }
-
-#[dependencies.near-sdk]
-#path="../../near-sdk-rs/near-sdk"
-
-#[dev-dependencies.near-sdk-sim]
-#path="../../near-sdk-rs/near-sdk-sim"

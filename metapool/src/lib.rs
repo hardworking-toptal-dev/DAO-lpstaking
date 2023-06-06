@@ -42,9 +42,6 @@ pub mod owner;
 pub mod reward_meter;
 pub use reward_meter::*;
 
-pub mod validator_loans;
-pub use validator_loans::*;
-
 pub mod empty_nep_145;
 pub mod fungible_token_standard;
 
@@ -286,8 +283,6 @@ impl MetaPool {
         operator_account_id: AccountId,
         meta_token_account_id: AccountId,
     ) -> Self {
-        assert!(!env::state_exists(), "The contract is already initialized");
-
         let result = Self {
             owner_account_id,
             contract_busy: false,
@@ -489,15 +484,11 @@ impl MetaPool {
     #[payable]
     pub fn set_reward_fee(&mut self, basis_points: u16) {
         self.assert_owner_calling();
+        assert_one_yocto();
         assert!(env::attached_deposit() > 0);
         assert!(basis_points < 1000); // less than 10%
-                                      // DEVELOPERS_REWARDS_FEE_BASIS_POINTS is included
         self.operator_rewards_fee_basis_points =
             basis_points.saturating_sub(DEVELOPERS_REWARDS_FEE_BASIS_POINTS);
-        // return the deposit (except 1 yocto)
-        if env::attached_deposit() > 1 {
-            Promise::new(env::predecessor_account_id()).transfer(env::attached_deposit());
-        }
     }
 
     /// Returns the staking public key

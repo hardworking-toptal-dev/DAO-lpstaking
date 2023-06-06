@@ -298,3 +298,10 @@ pub struct StakingPoolArgItem {
     pub account_id: AccountId, 
     pub weight_basis_points: u16
 } 
+
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct VLoanRequest {
+    //total requested
+    pub amount_requested: u128,
+}
