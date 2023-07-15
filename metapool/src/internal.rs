@@ -134,7 +134,11 @@ impl MetaPool {
     ) -> u128 {
         self.assert_not_busy();
 
-        self.assert_min_deposit_amount(near_amount);
+        assert!(
+            near_amount >= self.min_deposit_amount.saturating_sub(STORAGE_COST_YOCTOS),
+            "min deposit amount is {}",
+            self.min_deposit_amount
+        );
 
         let mut acc = self.internal_get_account(&account_id);
 
