@@ -34,7 +34,7 @@ pub struct OldMetaPool {
     /// be fulfilled 4 epochs from now. If there are someone else staking in the same epoch, both orders (stake & d-unstake) cancel each other
     /// (no need to go to the staking-pools) but the NEAR received for staking must be now reserved for the unstake-withdraw 4 epochs form now.
     /// This amount increments *during* end_of_epoch_clearing, *if* there are staking & unstaking orders that cancel each-other
-    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstkae claims
+    /// This amount also increments at retrieve_from_staking_pool, all retrieved NEAR after wait is considered at first reserved for unstake claims
     /// The funds here are *reserved* for the unstake-claims and can only be used to fulfill those claims
     /// This amount decrements at user's delayed-unstake-withdraw, when sending the NEAR to the user
     /// Related variables and Invariant:
@@ -59,7 +59,7 @@ pub struct OldMetaPool {
     /// at at end_of_epoch_clearing, (if there were a lot of unstake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_stake_orders: u128,
-    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake migth be done before EOE
+    /// The total amount of "delayed-unstake" orders in the current epoch, stNEAR has been burned, unstake might be done before EOE
     /// at at end_of_epoch_clearing, (if there were also stake in the same epoch), 
     /// it is possible that this amount remains in hte contract as reserve_for_unstake_claim
     pub epoch_unstake_orders: u128,
@@ -165,7 +165,7 @@ pub struct OldMetaPool {
 
     /// up to 1% of the total pool can be unstaked for rebalance (no more than 1% to not affect APY)
     pub unstake_for_rebalance_cap_bp: u16, // default 100bp, meaning 1%
-    /// when some unstake for rebalance is executed, this amountis increased 
+    /// when some unstake for rebalance is executed, this amount is increased 
     /// when some extra is retrieved or recovered in EOE clearing, it is decremented
     /// represents the amount that's not staked because is in transit for rebalance. 
     /// it could be in unstaked_and_waiting or in the contract & epoch_stake_orders
