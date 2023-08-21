@@ -360,10 +360,12 @@ impl MetaPool {
 
     /// Withdraws from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool* .- core-contracts/staking-pool only has "unstaked" to withdraw from
     pub fn withdraw(&mut self, amount: U128String) -> Promise {
+        assert_not_lockup_account_calling();
         self.internal_withdraw_use_unstaked(&env::predecessor_account_id(), amount.0)
     }
     /// Withdraws ALL from from "UNSTAKED" balance *TO MIMIC core-contracts/staking-pool .- core-contracts/staking-pool only has "unstaked" to withdraw from
     pub fn withdraw_all(&mut self) -> Promise {
+        assert_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let account = self.internal_get_account(&account_id);
         self.internal_withdraw_use_unstaked(&account_id, account.unstaked)
@@ -373,6 +375,7 @@ impl MetaPool {
     /// completes delayed-unstake action by transferring from retrieved_from_the_pools to user's NEAR account
     /// equivalent to core-contracts/staking-pool.withdraw_all, used by metastaking webapp
     pub fn withdraw_unstaked(&mut self) -> Promise {
+        assert_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let account = self.internal_get_account(&account_id);
         self.internal_withdraw_use_unstaked(&account_id, account.unstaked)
@@ -381,6 +384,7 @@ impl MetaPool {
     /// Deposits the attached amount into the inner account of the predecessor and stakes it.
     #[payable]
     pub fn deposit_and_stake(&mut self) -> U128String {
+        assert_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let amount = self.internal_deposit(&account_id);
         let shares = self.internal_stake_from_account(&account_id, amount);
@@ -407,6 +411,7 @@ impl MetaPool {
     /// Unstakes all staked balance from the inner account of the predecessor.
     /// The new total unstaked balance will be available for withdrawal in four epochs.
     pub fn unstake_all(&mut self) {
+        assert_not_lockup_account_calling();
         let account_id = env::predecessor_account_id();
         let mut account = self.internal_get_account(&account_id);
         let all_shares = account.stake_shares;
@@ -418,6 +423,7 @@ impl MetaPool {
     /// The new total unstaked balance will be available for withdrawal in four epochs.
     /// delayed_unstake, amount_requested is in yoctoNEARs
     pub fn unstake(&mut self, amount: U128String) {
+        assert_not_lockup_account_calling();
         self.internal_unstake(&env::predecessor_account_id(), amount.0);
     }
 
