@@ -9,16 +9,16 @@ macro_rules! event {
 }
 
 #[macro_export]
-#[cfg(not(prod))]
-macro_rules! debug {
+#[cfg(debug_log)]
+macro_rules! debug_log {
     ($($arg:tt)*) => ({
         env::log(format!($($arg)*).as_bytes());
     });
 }
 #[macro_export]
-#[cfg(prod)]
-macro_rules! debug {
-    
+#[cfg(not (debug_log))]
+macro_rules! debug_log {
+    ($($arg:tt)*) => ({})
 }
 
 pub fn assert_min_balance(amount: u128) {

@@ -302,7 +302,7 @@ impl MetaPool {
             if unstake_rebalance_left >= MIN_STAKE_UNSTAKE_AMOUNT_MOVEMENT {
             
                 let gspru = self.internal_get_staking_pool_requiring_unstake();
-                debug!(
+                log!(
                     r#"{{"event":"do_rebal_usntk", "extra":{}, "sp_inx":{}, "totExtra":{}, "unblocked":{}, "with_stake":{}}}"#,
                     gspru.extra/NEAR, gspru.sp_inx, gspru.total_extra/NEAR, gspru.count_unblocked, gspru.count_with_stake
                 );
@@ -353,7 +353,7 @@ impl MetaPool {
         // resulting "amount_to_unstake" can be lower than total_to_unstake, according to conditions in get_staking_pool_requiring_unstake 
         let gspru = self.internal_get_staking_pool_requiring_unstake();
 
-        debug!(
+        log!(
             r#"{{"event":"sp_has_extra","sp":"{}","amount":"{}"}}"#,
             gspru.sp_inx,
             gspru.extra
