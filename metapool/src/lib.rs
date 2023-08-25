@@ -611,7 +611,7 @@ impl MetaPool {
             st_near_to_burn.0
         };
 
-        debug!(
+        log!(
             "st_near owned:{}, to_sell:{}",
             user_account.stake_shares, st_near_to_sell
         );
@@ -679,7 +679,7 @@ impl MetaPool {
         let developers_st_near_cut = apply_pct(DEVELOPERS_SWAP_CUT_BASIS_POINTS, fee_in_st_near);
         developers_account.add_st_near(developers_st_near_cut, &self);
 
-        debug!("treasury_st_near_cut:{} operator_st_near_cut:{} developers_st_near_cut:{} fee_in_st_near:{}",
+        log!("treasury_st_near_cut:{} operator_st_near_cut:{} developers_st_near_cut:{} fee_in_st_near:{}",
             treasury_st_near_cut,operator_st_near_cut,developers_st_near_cut,fee_in_st_near);
 
         assert!(
@@ -691,7 +691,7 @@ impl MetaPool {
         // so $META for LP providers will be created. $METAs for LP providers are realized during add_liquidity(), remove_liquidity()
         let st_near_to_liq_pool = st_near_to_sell
             - (treasury_st_near_cut + operator_st_near_cut + developers_st_near_cut);
-        debug!("nslp_account.add_st_near {}", st_near_to_liq_pool);
+        log!("nslp_account.add_st_near {}", st_near_to_liq_pool);
         // major part of stNEAR sold goes to the NSLP
         nslp_account.add_st_near(st_near_to_liq_pool, &self);
 

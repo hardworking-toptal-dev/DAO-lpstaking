@@ -531,7 +531,7 @@ impl MetaPool {
                 };
                 // check if this pool has an unbalance requiring un-staking
                 let should_have = apply_pct(sp.weight_basis_points, self.total_for_staking);
-                debug!(
+                debug_log!(
                     r#"{{"event":"gtp.req.unstk shld:{} extra:{} unstk:{} w:{} {} {}","sp":"{}","amount":"{}"}}"#,
                     should_have / NEAR,
                     sp.staked.saturating_sub(should_have) / NEAR,
