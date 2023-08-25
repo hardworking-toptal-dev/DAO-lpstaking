@@ -5,7 +5,7 @@ version = "1.2.1"
 authors = ["Metapool.app <hello@metapool.app>"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib","rlib"]
 
 [dependencies]
 
