@@ -199,9 +199,7 @@ impl Account {
         // if the amount is close to user's total, remove user's total
         // to: a) do not leave less than ONE_MILLI_NEAR in the account, b) Allow some yoctos of rounding, e.g. remove(100) removes 99.999993 without panicking
         // Audit Note: Do not do this for .lockup accounts because the lockup contract relies on precise amounts
-        if account_id.ends_with(".lockup.near") 
-        || account_id.ends_with(".lockupy.testnet") 
-        || !is_close(amount_requested, self.available) { 
+        if is_lockup_account(account_id) || !is_close(amount_requested, self.available) { 
             // exact amount
             amount_requested
         }
