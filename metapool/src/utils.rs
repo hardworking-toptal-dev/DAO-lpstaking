@@ -37,6 +37,14 @@ pub fn assert_one_yocto() {
     );
 }
 
+pub fn assert_lockup_contract_calling() {
+    assert!(
+        env::predecessor_account_id() == "lockup.meta-pool.near"
+        || env::predecessor_account_id() == "lockup.meta-v2.pool.testnet",
+        "the function can only be operated by lockup.meta-pool.near"
+    );
+}
+
 pub fn is_promise_success() -> bool {
     assert_eq!(
         env::promise_results_count(),

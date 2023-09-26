@@ -1,19 +1,19 @@
-use crate::{*, empty_nep_145::STORAGE_COST_YOCTOS};
+pub use crate::types::*;
+pub use crate::utils::*;
+use crate::{empty_nep_145::STORAGE_COST_YOCTOS, *};
 use near_sdk::{
     json_types::{ValidAccountId, U128},
     log, AccountId, Balance, Promise, PromiseResult,
 };
-pub use crate::types::*;
-pub use crate::utils::*;
 
-const UNSTAKED_YOCTOS_TO_IGNORE:u128 = 100;
+const UNSTAKED_YOCTOS_TO_IGNORE: u128 = 100;
 
 pub struct GSPRUResult {
-    pub sp_inx:u16, 
-    pub extra:u128, 
-    pub count_unblocked:u16,
-    pub count_with_stake:u16,
-    pub total_extra:u128
+    pub sp_inx: u16,
+    pub extra: u128,
+    pub count_unblocked: u16,
+    pub count_with_stake: u16,
+    pub total_extra: u128,
 }
 
 /****************************/
@@ -53,15 +53,14 @@ impl MetaPool {
 /* Internal methods staking-pool trait */
 /***************************************/
 impl MetaPool {
-    pub(crate) fn internal_deposit(&mut self) -> u128 {
+    pub(crate) fn internal_deposit(&mut self, account_id: &String) -> u128 {
         self.assert_min_deposit_amount(env::attached_deposit());
-        self.internal_deposit_attached_near_into(env::predecessor_account_id())
+        self.internal_deposit_attached_near_into(account_id)
     }
 
     // adds env::attached_deposit() to account.available
     // if it is a new account, takes STORAGE_COST_YOCTOS as storage_deposit
-    pub(crate) fn internal_deposit_attached_near_into(&mut self, account_id: AccountId) -> u128 {
-
+    pub(crate) fn internal_deposit_attached_near_into(&mut self, account_id: &String) -> u128 {
         let opt_account = self.accounts.get(&account_id);
         let amount = if opt_account.is_none() {
             // account does not exists
@@ -70,10 +69,12 @@ impl MetaPool {
                 "new account, {} yoctos used for storage_deposit",
                 STORAGE_COST_YOCTOS
             );
-            assert!(env::attached_deposit() > STORAGE_COST_YOCTOS, "deposit too low");
+            assert!(
+                env::attached_deposit() > STORAGE_COST_YOCTOS,
+                "deposit too low"
+            );
             env::attached_deposit() - STORAGE_COST_YOCTOS
-            } 
-        else {
+        } else {
             // account already exists, use full amount
             env::attached_deposit()
         };
@@ -96,8 +97,11 @@ impl MetaPool {
 
     //------------------------------
     // MIMIC staking-pool, if there are unstaked, it must be free to withdraw
-    pub(crate) fn internal_withdraw_use_unstaked(&mut self, requested_amount: u128) -> Promise {
-        let account_id = env::predecessor_account_id();
+    pub(crate) fn internal_withdraw_use_unstaked(
+        &mut self,
+        account_id: &String,
+        requested_amount: u128,
+    ) -> Promise {
         let mut account = self.internal_get_account(&account_id);
 
         //MIMIC staking-pool, move 1st form unstaked->available, it must be free to withdraw
@@ -105,7 +109,7 @@ impl MetaPool {
 
         // NOTE: While ability to withdraw close to all available helps, it prevents lockup contracts from using this in a replacement to a staking pool,
         // because the lockup contracts relies on exact precise amount being withdrawn.
-        let amount = account.take_from_available(requested_amount, self);
+        let amount = account.take_from_available(account_id, requested_amount, self);
 
         //commented: Remove min_account_balance requirements, increase liq-pool target to cover all storage requirements
         //2 reasons: a) NEAR storage was cut by 10x  b) in the simplified flow, users do not keep "available" balance
@@ -115,12 +119,12 @@ impl MetaPool {
 
         self.internal_update_account(&account_id, &account);
         //transfer to user native near account
-        self.native_transfer_to_predecessor(amount)
+        self.native_transfer(account_id, amount)
     }
-    pub(crate) fn native_transfer_to_predecessor(&mut self, amount: u128) -> Promise {
+    pub(crate) fn native_transfer(&mut self, account_id: &String, amount: u128) -> Promise {
         //transfer to user native near account
         self.contract_account_balance -= amount;
-        Promise::new(env::predecessor_account_id()).transfer(amount)
+        Promise::new(account_id.clone()).transfer(amount)
     }
 
     //------------------------------
@@ -129,7 +133,7 @@ impl MetaPool {
     /// account_id must be registered
     pub(crate) fn internal_stake_from_account(
         &mut self,
-        account_id: AccountId,
+        account_id: &String,
         near_amount: Balance,
     ) -> u128 {
         self.assert_not_busy();
@@ -144,7 +148,7 @@ impl MetaPool {
 
         // take from the account "available" balance
         // also subs self.total_available
-        let amount = acc.take_from_available(near_amount, self);
+        let amount = acc.take_from_available(&account_id, near_amount, self);
 
         // Calculate the number of st_near (stake shares) that the account will receive for staking the given amount.
         let num_shares = self.stake_shares_from_amount(amount);
@@ -171,11 +175,10 @@ impl MetaPool {
 
     //------------------------------
     /// delayed_unstake, amount_requested is in yoctoNEARs
-    pub(crate) fn internal_unstake(&mut self, amount_requested: u128) {
+    pub(crate) fn internal_unstake(&mut self, account_id: &String, amount_requested: u128) {
         self.assert_not_busy();
 
-        let account_id = env::predecessor_account_id();
-        let acc = self.internal_get_account(&account_id);
+        let mut acc = self.internal_get_account(&account_id);
 
         // compute how much shares it will be
         let shares_from_requested = self.stake_shares_from_amount(amount_requested);
@@ -190,14 +193,16 @@ impl MetaPool {
             // use amount_requested
             shares_from_requested
         };
-        self.internal_unstake_shares(stake_shares_to_burn);
+        self.internal_unstake_shares(account_id, &mut acc, stake_shares_to_burn);
     }
 
-    pub(crate) fn internal_unstake_shares(&mut self, stake_shares_to_burn: u128) -> u128 {
+    pub(crate) fn internal_unstake_shares(
+        &mut self,
+        account_id: &String,
+        acc: &mut Account,
+        stake_shares_to_burn: u128,
+    ) -> (u128, u64) {
         self.assert_not_busy();
-
-        let account_id = env::predecessor_account_id();
-        let mut acc = self.internal_get_account(&account_id);
         assert!(stake_shares_to_burn > 0 && stake_shares_to_burn <= acc.stake_shares);
         //remove acc stake shares
         let amount_to_unstake = self.amount_from_stake_shares(stake_shares_to_burn);
@@ -213,7 +218,7 @@ impl MetaPool {
         self.total_for_staking -= amount_to_unstake;
 
         //--SAVE ACCOUNT--
-        self.internal_update_account(&account_id, &acc);
+        self.internal_update_account(&account_id, acc);
 
         event!(
             r#"{{"event":"D-UNSTK","account_id":"{}","amount":"{}","shares":"{}"}}"#,
@@ -230,21 +235,24 @@ impl MetaPool {
             acc.stake_shares,
             env::epoch_height()
         );
-        // return near amount 
-        amount_to_unstake
+        // return unstaked_requested_unlock_epoch
+        (amount_to_unstake, acc.unstaked_requested_unlock_epoch)
     }
 
     //--------------------------------------------------
     /// adds liquidity from deposited amount
     /// account mus be registered previously
-    pub(crate) fn internal_nslp_add_liquidity(&mut self, amount_requested: u128) -> u16 {
+    pub(crate) fn internal_nslp_add_liquidity(
+        &mut self,
+        account_id: &String,
+        amount_requested: u128,
+    ) -> u16 {
         self.assert_not_busy();
 
-        let account_id = env::predecessor_account_id();
         let mut acc = self.internal_get_account(&account_id);
 
         //take from the account "available" balance
-        let amount = acc.take_from_available(amount_requested, self);
+        let amount = acc.take_from_available(account_id, amount_requested, self);
 
         //get NSLP account
         let mut nslp_account = self.internal_get_nslp_account();
@@ -526,7 +534,8 @@ impl MetaPool {
             if !sp.busy_lock && sp.staked > 0 {
                 // count how how many sps are unblocked, i.e. can receive an unstake request
                 count_with_stake += 1;
-                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE { // 100 yoctos
+                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE {
+                    // 100 yoctos
                     count_unblocked += 1
                 };
                 // check if this pool has an unbalance requiring un-staking
@@ -548,7 +557,9 @@ impl MetaPool {
                 // NOTE2: core-contracts/staking-pool is imprecise when unstaking, some times 1 to 10 yoctos remain in "unstaked"
                 //        The bot should synchronize unstaked yoctos before calling this function.
                 // We assume that if sp.unstaked>100 yoctos, a new unstake will cause that amount to be blocked
-                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE || sp.unstk_req_epoch_height == env::epoch_height() {
+                if sp.unstaked <= UNSTAKED_YOCTOS_TO_IGNORE
+                    || sp.unstk_req_epoch_height == env::epoch_height()
+                {
                     // does this pool requires un-staking? (has too much staked?)
                     if sp.staked > should_have {
                         // how much?
@@ -569,7 +580,8 @@ impl MetaPool {
             extra: selected_extra_amount,
             count_unblocked,
             count_with_stake,
-            total_extra}
+            total_extra,
+        }
     }
 
     pub fn internal_st_near_transfer(
@@ -658,7 +670,7 @@ impl MetaPool {
         // if any one of the two is zero, we've a pure stake or pure unstake epoch, no clearing
         // just go and stake or unstake
         if self.epoch_stake_orders == 0 || self.epoch_unstake_orders == 0 {
-            return 
+            return;
         }
 
         // NOTE: `to_keep` can also be computed as `min(self.epoch_stake_orders, self.epoch_unstake_orders)`
@@ -711,5 +723,4 @@ impl MetaPool {
             );
         }
     }
-
 }
