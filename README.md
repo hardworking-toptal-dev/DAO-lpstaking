@@ -96,4 +96,4 @@ All tests are are performed in a separate project with an ad-hoc fuzzy test for 
 
 The test generates random operations. We have a list of "invariants" the contract must satisfy to guarantee the internal accounting is consistent. We use a seeded random generator to create "operations" against the metapool (deposit, liquid-unstake, delayed-unstake, add-liquidity, remove-liquidity, compute-rewards, retrieve-funds-from-pools, rebalance) in any order and amount. After each successful operation we check the contract invariants again. This is our way to tests unprepared operations combinations and make sure the internal accounting remains consistent
 
-The tests are located in metapool/test
+The tests are located in the folder metapool/test
