@@ -1,4 +1,4 @@
-//! A smart contract that allows diversified staking, stNEAR and META farming
+//! A smart contract that allows diversified staking, providing the stNEAR LST NEP-141 Token
 //! this contract include parts of core-contracts/lockup-contract & core-contracts/staking-pool
 
 /********************************/
@@ -164,8 +164,8 @@ pub struct MetaPool {
     // when someone "unstakes" they "burns" X shares at current price to recoup Y near
     pub total_stake_shares: u128, //total stNEAR minted
 
-    /// META is the governance token. Total meta minted by this contract
-    pub total_meta: u128,
+    /// META (now mpDAO) is the governance token
+    pub total_meta: u128, // deprecated 
 
     /// The total amount of tokens actually unstaked and in the waiting-delay (the tokens are in the staking pools)
     /// equivalent to sum(sp.unstaked)
@@ -206,13 +206,13 @@ pub struct MetaPool {
     ///NEAR/stNEAR Liquidity pool min fee
     pub nslp_min_discount_basis_points: u16, //0.5% initially
 
-    //The next 3 values define meta rewards multipliers. (10 => 1x, 20 => 2x, ...)
-    ///for each stNEAR paid staking reward, reward stNEAR holders with META. default:5x. reward META = rewards * (mult_pct*10) / 100
-    pub staker_meta_mult_pct: u16,
-    ///for each stNEAR paid as discount, reward stNEAR sellers with META. default:1x. reward META = discounted * (mult_pct*10) / 100
-    pub stnear_sell_meta_mult_pct: u16,
-    ///for each stNEAR paid as discount, reward LP providers  with META. default:20x. reward META = fee * (mult_pct*10) / 100
-    pub lp_provider_meta_mult_pct: u16,
+    // (deprecated) The next 3 values define meta rewards multipliers. (10 => 1x, 20 => 2x, ...)
+    // for each stNEAR paid staking reward, reward stNEAR holders with META. default:5x. reward META = rewards * (mult_pct*10) / 100
+    pub staker_meta_mult_pct: u16, // deprecated
+    // for each stNEAR paid as discount, reward stNEAR sellers with META. default:1x. reward META = discounted * (mult_pct*10) / 100
+    pub stnear_sell_meta_mult_pct: u16, // deprecated
+    // for each stNEAR paid as discount, reward LP providers  with META. default:20x. reward META = fee * (mult_pct*10) / 100
+    pub lp_provider_meta_mult_pct: u16, // deprecated
 
     /// min amount accepted as deposit or stake
     pub min_deposit_amount: u128,
@@ -232,10 +232,10 @@ pub struct MetaPool {
     pub web_app_url: Option<String>,
     pub auditor_account_id: Option<AccountId>,
 
-    /// Where's the NEP-141 $META token contract
-    pub meta_token_account_id: AccountId,
+    /// (deprecated) Where's the governance token contract
+    pub meta_token_account_id: AccountId, // deprecated
 
-    /// estimated & max meta rewards for each category
+    /// (deprecated) estimated & max meta rewards for each category
     pub est_meta_rewards_stakers: u128,
     pub est_meta_rewards_lu: u128, //liquid-unstakers
     pub est_meta_rewards_lp: u128, //liquidity-providers
@@ -264,11 +264,9 @@ impl MetaPool {
             get_total_staked_balance, get_owner_id, get_reward_fee_fraction, is_staking_paused, get_staking_key, get_account,
             get_number_of_accounts, get_accounts.
 
-    2. meta-staking: these are the extensions to the standard staking pool (liquid_unstake, trip-meter)
+    2. meta-staking: these are the extensions to the standard staking pool (liquid stake/unstake)
 
     3. fungible token [NEP-141]: this contract is the NEP-141 contract for the stNEAR token
-
-    4. multi fungible token [NEP-138]: this contract works as a multi-token also to allow access to the $META governance token
 
     */
 
@@ -311,20 +309,20 @@ impl MetaPool {
             nslp_max_discount_basis_points: 180, //1.8%
             nslp_min_discount_basis_points: 25,  //0.25%
             min_deposit_amount: 10 * NEAR,
-            // for each stNEAR paid as discount, reward stNEAR sellers with META. initial 5x, default:1x. reward META = discounted * mult_pct / 100
-            stnear_sell_meta_mult_pct: 50, //5x
-            // for each stNEAR paid staking reward, reward stNEAR holders with META. initial 10x, default:5x. reward META = rewards * mult_pct / 100
-            staker_meta_mult_pct: 5000, //500x
+            // (deprecated) for each stNEAR paid as discount, reward stNEAR sellers with META. initial 5x, default:1x. reward META = discounted * mult_pct / 100
+            stnear_sell_meta_mult_pct: 50, //5x (deprecated)
+            // (deprecated) for each stNEAR paid staking reward, reward stNEAR holders with META. initial 10x, default:5x. reward META = rewards * mult_pct / 100
+            staker_meta_mult_pct: 5000, //500x (deprecated)
             // for each stNEAR paid as discount, reward LPs with META. initial 50x, default:20x. reward META = fee * mult_pct / 100
-            lp_provider_meta_mult_pct: 200, //20x
+            lp_provider_meta_mult_pct: 200, //20x (deprecated)
             staking_pools: Vec::new(),
             meta_token_account_id,
-            est_meta_rewards_stakers: 0,
-            est_meta_rewards_lu: 0,
-            est_meta_rewards_lp: 0,
-            max_meta_rewards_stakers: 1_000_000 * ONE_NEAR,
-            max_meta_rewards_lu: 50_000 * ONE_NEAR,
-            max_meta_rewards_lp: 100_000 * ONE_NEAR,
+            est_meta_rewards_stakers: 0, // (deprecated)
+            est_meta_rewards_lu: 0, // (deprecated)
+            est_meta_rewards_lp: 0, // (deprecated)
+            max_meta_rewards_stakers: 1_000_000 * ONE_NEAR, // (deprecated)
+            max_meta_rewards_lu: 50_000 * ONE_NEAR, // (deprecated)
+            max_meta_rewards_lp: 100_000 * ONE_NEAR, // (deprecated)
             unstaked_for_rebalance: 0,
             unstake_for_rebalance_cap_bp: 100,
         };
@@ -718,8 +716,7 @@ impl MetaPool {
         );
 
         // The rest of the st_near sold goes into the liq-pool. Because it is a larger amount than NEARs removed, it will increase share value for all LP providers.
-        // Adding value to the pool via adding more stNEAR value than the NEAR removed, will be counted as rewards for the nslp_meter,
-        // so $META for LP providers will be created. $METAs for LP providers are realized during add_liquidity(), remove_liquidity()
+        // Adding value to the pool via adding more stNEAR value than the NEAR removed
         let st_near_to_liq_pool = st_near_to_sell
             - (treasury_st_near_cut + operator_st_near_cut + developers_st_near_cut);
         log!("nslp_account.add_st_near {}", st_near_to_liq_pool);
@@ -745,11 +742,10 @@ impl MetaPool {
         self.internal_update_account(&account_id, &user_account);
 
         log!(
-            "@{} liquid-unstaked {} stNEAR, got {} NEAR and {} $META",
+            "@{} liquid-unstaked {} stNEAR, got {} NEAR",
             &account_id,
             st_near_to_sell,
-            transfer_amount,
-            0 // meta_to_seller
+            transfer_amount
         );
         event!(
             r#"{{"event":"LIQ.U","account_id":"{}","stnear":"{}","near":"{}"}}"#,
@@ -880,19 +876,19 @@ impl MetaPool {
         self.internal_stake_from_account(&NSLP_INTERNAL_ACCOUNT.to_string(), amount);
     }
 
-    /// obsolete, kept for bin compat
+    /// deprecated, kept for bin compat
     pub fn realize_meta(&mut self, account_id: String) {
         // this fn should not be called for the NSLP_INTERNAL_ACCOUNT
         assert!(account_id != NSLP_INTERNAL_ACCOUNT);
     }
 
     //------------------
-    // HARVEST META
+    // HARVEST META (now mpDAO)
     //------------------
     #[payable]
-    /// obsolete - kept for bin compat
+    /// deprecated - kept for bin compat
     pub fn harvest_meta(&mut self) -> Promise {
-        panic!("internal $META incentives have been deactivated. Use stNEAR in the ecosystem to get incentives");
+        panic!("internal incentives have been deactivated. Use stNEAR in the ecosystem to get incentives");
     }
 
     //---------------------------------------------------------------------------

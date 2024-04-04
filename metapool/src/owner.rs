@@ -1,6 +1,5 @@
 use crate::*;
-use near_sdk::{near_bindgen, Promise, PublicKey};
-use near_sdk::serde::{Serialize};
+use near_sdk::{near_bindgen, serde::Serialize};
 
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -15,21 +14,6 @@ pub struct GSPRUResultJson {
 #[near_bindgen]
 impl MetaPool {
     // OWNER'S METHODS and other general view-methods
-
-    /// Adds full access key with the given public key to the account once the contract is empty
-    /// (has no accounts)
-    /// Requires 50 TGas (2 * BASE_GAS)
-    pub fn add_full_access_key(&mut self, new_public_key: Base58PublicKey) -> Promise {
-        self.assert_owner_calling();
-
-        assert!(self.accounts.len() == 0, "contract still has accounts");
-
-        env::log(b"Adding a full access key");
-
-        let new_public_key: PublicKey = new_public_key.into();
-
-        Promise::new(env::current_account_id()).add_full_access_key(new_public_key)
-    }
 
     /// Owner's method.
     /// Pauses pool staking.

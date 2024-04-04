@@ -32,17 +32,17 @@ pub struct Account {
     /// The funds will be locked for -AT LEAST- NUM_EPOCHS_TO_UNLOCK epochs
     pub unstaked_requested_unlock_epoch: EpochHeight,
 
-    //-- META INCENTIVES (Disabled on 2023-05)
-    ///realized META, can be used to transfer META from one user to another
+    //-- META (now mpDAO) INCENTIVES (Disabled on 2023-05)
+    // realized META, can be used to transfer META from one user to another
     // Total META = realized_meta + staking_meter.mul_rewards(valued_stake_shares) + lp_meter.mul_rewards(valued_lp_shares)
     // Every time the user operates on STAKE/UNSTAKE: we realize meta: realized_meta += staking_meter.mul_rewards(valued_staked_shares)
     // Every time the user operates on ADD.LIQ/REM.LIQ.: we realize meta: realized_meta += lp_meter.mul_rewards(valued_lp_shares)
     // if the user calls farm_meta() we perform both
-    pub realized_meta: u128,
+    pub realized_meta: u128, // deprecated
     ///Staking rewards meter (to mint stNEAR for the user)
     pub staking_meter: RewardMeter,
     ///LP fee gains meter (to mint meta for the user)
-    pub lp_meter: RewardMeter,
+    pub lp_meter: RewardMeter, // deprecated
 
     //-- STATISTICAL DATA --
     // User's statistical data

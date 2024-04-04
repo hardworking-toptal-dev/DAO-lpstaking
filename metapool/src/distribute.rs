@@ -110,7 +110,7 @@ impl MetaPool {
             } else {
                 //here the sp has no sizable unstaked balance, we must deposit_and_stake on the sp from our balance
 
-                // TODO: This may be too optimistic, why not compute the storage explicitly and add
+                // NOTE: This contract holds also the liquidity pool for fast unstake may be too optimistic, why not compute the storage explicitly and add
                 //    a safety margin on top of that. That's because the account state may
                 //    potentially exceed the 35N (or 3.5M right now). But I guess it can happen
                 //    only at the beginning of metapool before the liquidity is provided.
