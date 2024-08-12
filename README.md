@@ -14,9 +14,6 @@ What is Meta-Pool and other non-Technical Documentation
 * [Technical Notes](https://narwallets.github.io/meta-pool/technical-notes)
 
 * [NEAR Live Contract Review (video)](https://www.youtube.com/watch?v=4gB-6yoas74)
-### Repositories 
-
-This is the Smart Contract repository. The Web App UI is at https://github.com/Narwallets/metastaking-webapp
 
 ### Change Log
 
